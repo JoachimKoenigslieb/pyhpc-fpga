@@ -1,0 +1,8 @@
+*.log
+*.xo
+*.xclbin*
+*compile_summary
+build/_x
+build/.run
+build/.Xil
+*settings*
