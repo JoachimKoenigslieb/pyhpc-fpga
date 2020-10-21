@@ -18,6 +18,70 @@
 
 using namespace xt::placeholders; //enables xt::range(1, _) syntax. eqiv. to [1:] syntax in numpy 
 
+int cumprod(std::vector<int> v){
+	int i = 1;
+	for (int j=0; j<v.size(); j++){
+		i = i * v[j];
+	}
+	return i;
+}
+
+void print_vec(std::vector<int> v){
+	for (auto &elm : v) {
+		std::cout << elm << ", ";
+	};
+	std::cout << std::endl;
+}
+
+
+std::vector<int> calculate_shapes_for_broadcasting(std::vector<int> &shape_A, std::vector<int> &shape_B){
+	int len_A = shape_A.size(), len_B = shape_B.size();
+
+	std::cout << "A has len " << len_A << " B has len: " << len_B << std::endl;
+
+	if (len_A < len_B){
+		for (int i=0; i<(len_B-len_A); i++){
+			shape_A.insert(shape_A.begin(), 1); // O(n) but we dont care. Insert singeleton dimensions
+			std::cout << "insert singleton at A" << std::endl;
+		}
+	} else {
+		for (int i=0; i<(len_A - len_B); i++){
+			shape_B.insert(shape_B.begin(), 1);
+			std::cout << "insert singleton at B" << std::endl;
+		}
+	}
+
+	// loop trough and check if we can broadcast
+	int dim_A, dim_B;
+	std::vector<int> shape_output(std::max(len_A, len_B)); 
+
+	for (int i=0; i<std::max(len_A, len_B); i++){
+		dim_A = shape_A[i];
+		dim_B = shape_B[i];
+		if (!(dim_A == dim_B || dim_A == 1 || dim_B == 1)){
+			std::cout << "You tried to broadcast shapes that does not broadcast\n"; //do proper error handling
+		}
+		shape_output[i] = std::max(dim_A, dim_B);
+	}
+
+	return shape_output;
+}
+
+std::vector<int> get_stride_from_shape(std::vector<int> shape){
+	int dims = shape.size();
+	std::vector<int> stride(dims);
+	// stride for dimension i is cumulative product of size of dimensions higher than i.
+
+	for (int i=0; i<dims; i++){
+		stride[i] = cumprod(std::vector<int>(shape.begin() + i + 1, shape.end()));
+		if (shape[i] == 1){
+			stride[i] = 0;
+		}
+	}
+
+	return stride;
+}
+
 // Memory alignment
 template <typename T>
 T *aligned_alloc(std::size_t num)
@@ -36,7 +100,7 @@ unsigned long diff(const struct timeval *newTime, const struct timeval *oldTime)
 	return (newTime->tv_sec - oldTime->tv_sec) * 1000000 + (newTime->tv_usec - oldTime->tv_usec);
 }
 
-void run_kernel(std::string kernel_name, int kernel_size, std::vector<double *> &inputs, std::vector<double *> &outputs, std::vector<cl::Device> &devices, cl::Context &context, cl::Program::Binaries &bins, cl::CommandQueue &q)
+void run_kernel(std::string kernel_name, std::vector<double *> &inputs, std::vector<double *> &outputs, std::vector<int> A_shape, std::vector<int> B_shape, std::vector<cl::Device> &devices, cl::Context &context, cl::Program::Binaries &bins, cl::CommandQueue &q)
 {
 	// this is a helper function to execute a kernel.
 	{
@@ -50,40 +114,91 @@ void run_kernel(std::string kernel_name, int kernel_size, std::vector<double *> 
 
 		std::vector<cl::Buffer> in_buffers(num_in);
 		std::vector<cl::Buffer> out_buffers(num_out);
+		std::vector<cl::Buffer> in_stride_buffers(num_in);
+		std::vector<cl::Buffer> out_stride_buffers(num_out);
 
-		for (int i = 0; i < num_in; i++)
-		{
-			in_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, sizeof(double) * kernel_size, inputs[i]);
+
+		std::vector<int> output_shape = calculate_shapes_for_broadcasting(A_shape, B_shape);  //here we modify A_shape and B_shape inplace. we have a copy of them in the run_kernel scope.
+		int len_stride = A_shape.size();
+
+		cl::Buffer out_shape_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, sizeof(int) * output_shape.size(), output_shape.data());
+
+		std::cout << "A_shapes: ";
+		print_vec(A_shape);
+		std::cout << "B_shapes: "; 
+		print_vec(B_shape);
+		std::cout << "Out_shapes ";
+		print_vec(output_shape);
+
+		std::vector<std::vector<int>> input_strides = {get_stride_from_shape(A_shape),get_stride_from_shape(B_shape)};
+		std::vector<std::vector<int>> output_strides = {get_stride_from_shape(output_shape)};
+
+		/* manual override for emergency situations....
+
+		std::vector<int> A_stride = {0, 1};
+		std::vector<int> B_stride = {10, 1};
+		std::vector<int> O_stride = {10, 1};
+
+		input_strides = {A_stride, B_stride};
+		output_strides = {O_stride};
+
+		*/
+
+		std::cout << "A strides: ";
+		print_vec(input_strides[0]);
+		std::cout << "B strides: ";
+		print_vec(input_strides[1]);
+		std::cout << "O strides: ";
+		print_vec(output_strides[0]);
+
+		std::vector<int> input_sizes = {cumprod(A_shape), cumprod(B_shape)};
+		std::vector<int> output_sizes = {cumprod(output_shape)};
+
+		std::cout << "Input size: " << input_sizes[0] << ", " << input_sizes[1] << std::endl;
+		std::cout << "Output size: " << output_sizes[0] << std::endl; 
+
+		for (int i = 0; i < num_in; i++){
+			in_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, sizeof(double) * input_sizes[i], inputs[i]);
+			in_stride_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, sizeof(int) * len_stride, input_strides[i].data());
 		}
 
-		for (int i = 0; i < num_out; i++)
-		{
-			out_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, sizeof(double) * kernel_size, outputs[i]);
+		for (int i = 0; i < num_out; i++){
+			out_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, sizeof(double) * output_sizes[i], outputs[i]);
+			out_stride_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, sizeof(int) * len_stride, output_strides[i].data()); 
 		}
 
 		std::cout << "INFO: Buffers has been created" << std::endl;
 
-		kernel.setArg(0, kernel_size); //we need to set arg0 to size!
-
+		//set inputs.
 		for (int i = 0; i < num_in; i++)
 		{
-			kernel.setArg(i + 1, in_buffers[i]);
+			kernel.setArg(i, in_buffers[i]);
 			q.enqueueMigrateMemObjects({in_buffers[i]}, 0);
 		}
 
-		for (int i = 0; i < num_out; i++)
-		{
-			kernel.setArg(i + num_in + 1, out_buffers[i]);
+		//set strides
+		for (int i = 0; i < 2; i++){
+			kernel.setArg(2 + i, in_stride_buffers[i]);
+			q.enqueueMigrateMemObjects({in_stride_buffers[i]}, 0);
 		}
 
-		std::cout << "INFO: Arguments has been set" << std::endl;
+		//set outputs
+		for (int i = 0; i < num_out; i++)
+		{
+			kernel.setArg(i + num_in + 2, out_buffers[i]);
+		}
 
-		std::cout << "INFO: Migrated to device" << std::endl;
+		//set output shape + stride
+		kernel.setArg(5, out_shape_buffer);
+		kernel.setArg(6, out_stride_buffers[0]);
+
+		std::cout << "INFO: Arguments are set\n";
+
+		q.enqueueMigrateMemObjects({out_shape_buffer}, 0);
+		q.enqueueMigrateMemObjects({out_stride_buffers[0]}, 0);
 
 		q.enqueueTask(kernel);
-
 		q.finish();
-
 		q.enqueueMigrateMemObjects({out_buffers[0]}, CL_MIGRATE_MEM_OBJECT_HOST); // 1 : migrate from dev to host
 
 		std::cout << "INFO: Migrated to back to host" << std::endl;
@@ -91,6 +206,7 @@ void run_kernel(std::string kernel_name, int kernel_size, std::vector<double *> 
 		q.finish();
 	}
 }
+
 
 // Arguments parser
 class ArgParser
