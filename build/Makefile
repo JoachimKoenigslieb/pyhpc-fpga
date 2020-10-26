@@ -13,6 +13,9 @@ kernels.xclbin: $(OBJECTS)
 $(OBJ_DIR)/%.xo: $(KERNEL_DIR)/%.cpp
 	v++ -t $(TARGET) --config design.cfg -c -k $(basename $(notdir $<)) $(INCLUDES) -o $@ $<
 
+host: ../src/host.cpp
+	g++ -o host ../src/host.cpp -I/opt/xilinx/xrt/include/ -I/tools/Xilinx/Vivado/2020.1/include/ -I../src/xcl2/ -L/opt/xilinx/xrt/lib/ -L/usr/local/lib -L/usr/lib -lOpenCL -lcnpy -lz -lpthread -lrt -lstdc++ -std=c++14 -w -O0 -g
+
 clean:
 	rm -f *.log
 	rm -f *_summary

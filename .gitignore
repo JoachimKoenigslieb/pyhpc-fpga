@@ -6,3 +6,4 @@ build/_x
 build/.run
 build/.Xil
 *settings*
+./build/host
