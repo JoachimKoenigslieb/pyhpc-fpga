@@ -214,6 +214,7 @@ void run_broadcast_kernel(std::string kernel_name,
 		pad_begin(B_offset, 0, dimensions);
 		pad_begin(A_offset_end, 0, dimensions);
 		pad_begin(B_offset_end, 0, dimensions);
+		pad_begin(output_offset, 0, dimensions);
 		for (int i=0; i<dimensions; i++){
 			A_offset[i] -= output_offset[i];
 			B_offset[i] -= output_offset[i];
@@ -263,16 +264,16 @@ void run_broadcast_kernel(std::string kernel_name,
 
 		// write to buffers
 		for (int i = 0; i < num_in; i++){
-			in_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, sizeof(double) * data_sizes_input[i], inputs[i]);
-			in_stride_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, sizeof(int) * dimensions, input_strides[i].data());
-			in_offset_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, sizeof(int) * dimensions, input_offset[i].data());
+			in_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * data_sizes_input[i], inputs[i]);
+			in_stride_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_strides[i].data());
+			in_offset_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_offset[i].data());
 		}
 
-		out_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, sizeof(double) * data_size_output, outputs[0]);
-		out_shape_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, sizeof(int) * dimensions, output_shape.data());
-		out_stride_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, sizeof(int) * dimensions, output_stride.data());
-		out_offset_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, sizeof(int) * dimensions, output_offset.data());
-		out_offset_end_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, sizeof(int) * dimensions, output_offset_end.data());
+		out_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * data_size_output, outputs[0]);
+		out_shape_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_shape.data());
+		out_stride_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_stride.data());
+		out_offset_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_offset.data());
+		out_offset_end_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_offset_end.data());
 
 		std::cout << "INFO: Buffers has been created" << std::endl;
 
@@ -400,11 +401,11 @@ int main(int argc, const char *argv[])
 	double *flux_top_data = aligned_alloc<double>(size_3d);
 	double *temp_data_3d = aligned_alloc<double>(size_3d);
 	double *sqrttke_data = aligned_alloc<double>(size_3d);
-	double *a_tri_data = aligned_alloc<double>((Y-2) * (X - 2));
-	double *b_tri_data = aligned_alloc<double>((Y-2) * (X - 2));
-	double *c_tri_data = aligned_alloc<double>((Y-2) * (X - 2));
-	double *d_tri_data = aligned_alloc<double>((Y-2) * (X - 2));
-	double *delta_data = aligned_alloc<double>((Y-2) * (X - 2));
+	double *a_tri_data = aligned_alloc<double>((Y-4) * (X - 4));
+	double *b_tri_data = aligned_alloc<double>((Y-4) * (X - 4));
+	double *c_tri_data = aligned_alloc<double>((Y-4) * (X - 4));
+	double *d_tri_data = aligned_alloc<double>((Y-4) * (X - 4));
+	double *delta_data = aligned_alloc<double>((Y-4) * (X - 4));
 	*/
 
 	xt::xarray<double> u = xt::load_npy<double>("../src/numpy_files/u.npy");
@@ -432,10 +433,10 @@ int main(int argc, const char *argv[])
 	xt::xarray<double> flux_north = xt::zeros<double>({X, Y, Z});
 	xt::xarray<double> flux_top = xt::zeros<double>({X, Y, Z});
 	xt::xarray<double> sqrttke = xt::empty<double>({X, Y, Z});
-	xt::xarray<double> a_tri = xt::zeros<double>({X-2, Y-2, Z});
-	xt::xarray<double> b_tri = xt::zeros<double>({X-2, Y-2, Z});
-	xt::xarray<double> c_tri = xt::zeros<double>({X-2, Y-2, Z});
-	xt::xarray<double> d_tri = xt::zeros<double>({X-2, Y-2, Z});
+	xt::xarray<double> a_tri = xt::zeros<double>({X-4, Y-4, Z});
+	xt::xarray<double> b_tri = xt::zeros<double>({X-4, Y-4, Z});
+	xt::xarray<double> c_tri = xt::zeros<double>({X-4, Y-4, Z});
+	xt::xarray<double> d_tri = xt::zeros<double>({X-4, Y-4, Z});
 	xt::xarray<double> delta = xt::zeros<double>({X-4, Y-4, Z});
 
 
@@ -473,11 +474,13 @@ int main(int argc, const char *argv[])
 	*/
 
 
+
 	int tau = 0;
 	double taup1 = 1.;
 	double taum1 = 2.;
 	double dt_tracer = 1.;
 	double dt_mom = 1.;
+	double dt_tke = 1.;
 	double AB_eps = 0.1;
 	double alpha_tke = 1.;
 	double c_eps = 0.7;
@@ -485,35 +488,69 @@ int main(int argc, const char *argv[])
 
 	std::vector<double *> inputs;
 	std::vector<double *> outputs;
+	int tmp_int;
 
-	/*
-	inputs = {
+	/*inputs = {
 				xt::view(tke, xt::all(), xt::all(), xt::all(), tau).data(), 
 				flux_east.data()
 			}; 
 	outputs = {sqrttke.data()};
-	run_kernel("vmax", size_3d, inputs, outputs, devices, context, bins, q);
+	run_kernel("vmax", size_3d, inputs, outputs, devices, context, bins, q); //these dont broadcast yet! might be a biiig problemo
 
 	inputs = {sqrttke.data()};
 	outputs = {sqrttke.data()};
 	run_kernel("vsqrt", size_3d, inputs, outputs, devices, context, bins, q);
 	*/
 
-	xt::xarray<double> one = xt::ones<double>({1});
-	xt::xarray<double> test = xt::arange(9).reshape({3,3});
-	xt::xarray<double> res = xt::zeros<double>({4, 4});
 
-	inputs = {	
-				one.data(),
-				dzt.data(),
-			};
-	outputs = { delta.data() };
+	xt::xarray<double> one = xt::ones<double>({1});
+	xt::xarray<double> zero = xt::zeros<double>({1});
+
+	
+	inputs = {one.data(), dzt.data()};
+	outputs = {delta.data()};
 	run_broadcast_kernel("div3d", inputs, outputs, 
 		{1}, {Z}, {X-4, Y-4, Z},		//shapes
-		{0}, {1,}, {0, 0, 0,},			//start index
-		{0}, {0,}, {0, 0, -1}, 		//negativ end index
+		{0,}, {1}, {0, 0, 0,},			//start index
+		{0,}, {0}, {0, 0, -1}, 		//negativ end index
 		devices, context, bins, q);
-	std::cout << delta;
+
+	std::cout << "YO!!!: result of sum of delta: (after i divide 1/dzt...)" << xt::sum(delta) << std::endl;
+
+	xt::xarray<double> half = xt::ones<double>({1}) * 0.5;
+
+	inputs = {half.data(), delta.data()};
+	outputs = {delta.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},		//shapes
+		{0,}, {0, 0, 0}, {0, 0, 0,},			//start index
+		{0,}, {0, 0, -1}, {0, 0, -1}, 		//negativ end index
+		devices, context, bins, q);
+
+	std::cout << "YO!!!: result of sum of delta: (after i multiple by some constant...)" << xt::sum(delta) << std::endl;
+	
+	xt::xarray<double> temp = xt::zeros<double>(kappaM.shape());
+
+	inputs = {kappaM.data(), kappaM.data()};
+	outputs = {temp.data()};
+	run_broadcast_kernel("add3d", inputs, outputs, 
+		{X, Y, Z}, {X,Y,Z}, {X, Y, Z},		//shapes
+		{2, 2, 0}, {2, 2, 1}, {2, 2, 0,},			//start index
+		{-2, -2, -1}, {-2, -2, 0}, {-2, -2, -1}, 		//negativ end index
+		devices, context, bins, q);
+
+	std::cout << "YO!!!: Sum of kappa_M delta: " << xt::sum(temp) << std::endl;
+	inputs = {delta.data(), temp.data()};
+	outputs = {delta.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {X, Y, Z}, {X-4, Y-4, Z},		//shapes
+		{0, 0, 0}, {2, 2, 0}, {0, 0, 0,},			//start index
+		{0, 0, -1}, {-2, -2, -1}, {0, 0, -1}, 		//negativ end index
+		devices, context, bins, q);
+
+	std::cout << "YO!!!: result of sum of delta: (after we multply by kappaM)" << xt::sum(delta) << std::endl;
+	
+
 
 	return 0;
 }

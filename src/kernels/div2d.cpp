@@ -1,9 +1,9 @@
 extern "C" void div2d(double* A, double* B, int* A_stride, int* B_stride, int* A_offset, int* B_offset, double* out, int* out_shape, int* out_stride, int* out_offset, int* out_end_offset) {
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem0 port = A latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
-#pragma HLS INTERFACE m_axi offset = slave bundle = gmem0 port = B latency = 64 num_read_outstanding = \
+#pragma HLS INTERFACE m_axi offset = slave bundle = gmem1 port = B latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
-#pragma HLS INTERFACE m_axi offset = slave bundle = gmem1 port = out latency = 64 num_read_outstanding = \
+#pragma HLS INTERFACE m_axi offset = slave bundle = gmem2 port = out latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
 
 #pragma HLS INTERFACE s_axilite port = A bundle = control
