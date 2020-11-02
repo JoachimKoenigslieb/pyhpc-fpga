@@ -40,6 +40,7 @@ flux_top = np.zeros_like(maskU)
 
 sqrttke = np.sqrt(np.maximum(0., tke[:, :, :, tau])) 
 
+
 """
 integrate Tke equation on W grid with surface flux boundary condition
 """
@@ -59,5 +60,12 @@ delta = np.zeros_like(maskU[2:-2, 2:-2])
 delta[:, :, :-1] = 1 / dzt[np.newaxis, np.newaxis, 1:] * alpha_tke * 0.5 * dt_tke\
         * (kappaM[2:-2, 2:-2, :-1] + kappaM[2:-2, 2:-2, 1:])
 
+a_tri[:, :, 1:-1] = -delta[:, :, :-2] / \
+        dzw[np.newaxis, np.newaxis, 1:-1]
+a_tri[:, :, -1] = -delta[:, :, -2] / (0.5 * dzw[-1])
 
-print(np.sum(delta))
+b_tri[:, :, 1:-1] = 1 + \
+		(delta[:, :, 1:-1] + delta[:, :, :-2]) / dzw[np.newaxis, np.newaxis, 1:-1] + \
+		dt_tke * c_eps * sqrttke[2:-2, 2:-2, 1:-1] / mxl[2:-2, 2:-2, 1:-1]
+
+print(b_tri.sum())

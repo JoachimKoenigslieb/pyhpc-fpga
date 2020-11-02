@@ -33,6 +33,13 @@ void print_vec(std::vector<int> v){
 	std::cout << std::endl;
 }
 
+void print_vec(std::vector<bool> v){
+	int len = v.size();
+	for (int i=0; i<len; i++) {
+		std::cout << v[i] << ", ";
+	};
+	std::cout << std::endl;
+}
 
 void pad_begin(std::vector<int> &vec, int val, int to_len){
 	int vec_len = vec.size();
@@ -40,6 +47,26 @@ void pad_begin(std::vector<int> &vec, int val, int to_len){
 		vec.insert(vec.begin(), val);
 	}
 }
+
+void push_right(std::vector<int> &vec, int num){
+	int vec_size = vec.size();
+	vec.erase(vec.end() - num, vec.end());
+	pad_begin(vec, 0, vec_size);
+}
+
+int count_trailing_ones(std::vector<int> &vec){
+	int ones=0;
+	int vec_size = vec.size();
+	for (int i=vec_size-1; i>-1; i--){
+		if (vec[i] == 1){
+			ones++;
+		} else {
+			break;
+		}
+	}
+	return ones;
+}
+
 
 void calculate_shapes_for_broadcasting(std::vector<int> &shape_A, std::vector<int> &shape_B, std::vector<int> requested_shape_output)
 {
@@ -76,6 +103,14 @@ void calculate_shapes_for_broadcasting(std::vector<int> &shape_A, std::vector<in
 	}
 }
 
+int vec_sum(std::vector<bool> v){
+	int s=0;
+	int dims = v.size();
+	for (int i=0; i<dims; i++){
+		s+=v[i];
+	}
+	return s;
+}
 
 std::vector<int> get_stride_from_shape(std::vector<int> shape){
 	int dims = shape.size();
@@ -167,6 +202,120 @@ void run_kernel(std::string kernel_name, int kernel_size, std::vector<double *> 
 }
 
 
+std::vector<int> sub_vecs(std::vector<int> A, std::vector<int> B){
+	int dims = A.size();
+	std::vector<int> res(dims);
+	for (int i=0; i<dims; i++){
+		res[i] = A[i]-B[i];
+	}
+	return res;
+}
+
+std::vector<int> add_vecs(std::vector<int> A, std::vector<int> B){
+	int dims = A.size();
+	std::vector<int> res(dims);
+	for (int i=0; i<dims; i++){
+		res[i] = A[i]+B[i];
+	}
+	return res;
+}
+
+std::vector<bool> singleton_dimension_mask(std::vector<int> v){
+	int dimensions = v.size();
+	std::vector<bool> mask(dimensions);
+	for (int i=0; i<dimensions; i++){
+		if (v[i] == 1){
+			mask[i] = true;
+		} else {
+			mask[i] = false;
+		}
+	}
+	return mask;
+}
+
+void remove_leading_zeros(std::vector<int> &v){
+	int dims = v.size();
+	int leading_zeros = 0;
+	for (int i=0; i<dims; i++){
+		if (v[i] == 0){
+			leading_zeros++;
+		} else {
+			break;
+		}
+	} 
+	v = std::vector<int>(v.begin() + leading_zeros, v.end());
+}
+
+void rebuild_stride(std::vector<int> &stride, std::vector<bool> input_singleton_mask, std::vector<bool> output_singleton_mask){
+	std::vector<int> stride_pool;
+	int dimensions = output_singleton_mask.size();
+
+	std::cout << "Attempting to rebuild strides for stride vector ";
+	print_vec(stride);
+	std::cout << "Input mask is ";
+	print_vec(input_singleton_mask);
+	std::cout << "Output mask is ";
+	print_vec(output_singleton_mask);
+	std::cout << "Building stride pool...\n";
+
+	for (int i=0; i<dimensions; i++){
+		if (!input_singleton_mask[i]){
+			stride_pool.push_back(stride[i]);
+		}
+	}
+
+	std::cout << "stride pool is: ";
+
+	print_vec(stride_pool);
+	std::cout << "rebulding stride...\n";
+
+	std::vector<int> output_mask_where;
+	for (int i=0; i<dimensions; i++){
+		if (!output_singleton_mask[i]){
+			output_mask_where.push_back(i); //All the places we could possible put a stride. We put it into the most-leading dimensions.
+		}
+	}
+
+	std::cout << "available indexes to put new strides: ";
+	print_vec(output_mask_where);
+
+	int available_strides = stride_pool.size();
+	std::vector<int> fixed_strides(dimensions);
+	for (int i=0; i<available_strides; i++){
+		fixed_strides[output_mask_where.back()] = stride_pool.back();
+		stride_pool.pop_back();
+		output_mask_where.pop_back();
+	}
+
+	pad_begin(fixed_strides, 0, dimensions);
+	stride = fixed_strides;
+	/*
+
+	if (stride_pool.size() == 0){
+		std::cout << "Stride pool is zero! Either we have a 0 dim array (A scalar), or something is wrong. Either way, imma early exit rebuilding stride...\n";
+		return;
+	}
+
+
+	for (int i=0; (i<dimensions && placed<max_place); i++){
+		std::cout << "Working on stride position: " << i << " and have placed: " << placed << "/" << max_place  << std::endl;
+		if (output_singleton_mask[i]==true){ //I think this should be elementwise and with input_singleton_mask. We cant put 
+			stride[i] = 0;
+			std::cout << "Output masks is true (ie, there is a singleton dim here) " << output_singleton_mask[i] << std::endl;
+		}
+		else {
+			stride[i] = stride_pool.back();
+			stride_pool.pop_back();
+			placed++;
+			std::cout << "We build the stride...\n";
+		}
+	}
+	//	remove_leading_zeros(stride);
+	*/
+	std::cout << "new stride:\n";
+	print_vec(stride);
+}
+
 void run_broadcast_kernel(std::string kernel_name,
 							std::vector<double *> &inputs,
 							std::vector<double *> &outputs,
@@ -206,27 +355,72 @@ void run_broadcast_kernel(std::string kernel_name,
 		cl::Buffer out_offset_buffer;
 		cl::Buffer out_offset_end_buffer;
 
+		std::cout << "INFO: Buffers initialized. Calculating sizes, shapes, strides etc...\n";
+
 		//calculate size variables
-		int dimensions = output_shape.size();
+		int len_A, len_B, len_out;
+		len_A = A_shape.size(),
+		len_B = B_shape.size(),
+		len_out = output_shape.size();
+		int max_in = std::max(len_A, len_B);
+		int dimensions = std::max(max_in, len_out);
 		pad_begin(A_shape, 1, dimensions); //add singleton dimensions
 		pad_begin(B_shape, 1, dimensions);
+		pad_begin(output_shape, 1, dimensions);
 		pad_begin(A_offset, 0, dimensions); //zero pad offsets if not defined
 		pad_begin(B_offset, 0, dimensions);
+		pad_begin(output_offset, 0, dimensions);
 		pad_begin(A_offset_end, 0, dimensions);
 		pad_begin(B_offset_end, 0, dimensions);
-		pad_begin(output_offset, 0, dimensions);
+		pad_begin(output_offset_end, 0, dimensions);
+
+		std::cout << "INFO: Basic size stuff calculated. Rebuiling for edge cases...\n";
+
+		//calculate view shapes:
+		std::vector<int> A_view_shape, B_view_shape, output_view_shape; 
+		A_view_shape = sub_vecs(add_vecs(A_shape, A_offset_end), A_offset); //A_offset_end is a negative index indicating how many to take from the end. 
+		B_view_shape = sub_vecs(add_vecs(B_shape, B_offset_end), B_offset); //A_offset_end is a negative index indicating how many to take from the end. 
+		output_view_shape = sub_vecs(add_vecs(output_shape, output_offset_end), output_offset); //A_offset_end is a negative index indicating how many to take from the end. 
+
 		for (int i=0; i<dimensions; i++){
 			A_offset[i] -= output_offset[i];
 			B_offset[i] -= output_offset[i];
 		}
 
+		std::cout << "INFO: view shapes found...\n";
+
 		std::vector<int> data_sizes_input = {cumprod(A_shape), cumprod(B_shape)};
 		int data_size_output = cumprod(output_shape);
 
+		std::vector<int> A_stride, B_stride, output_stride;
 
 		//calculate strides and offsets
-		std::vector<std::vector<int>> input_strides = {get_stride_from_shape(A_shape), get_stride_from_shape(B_shape)};
-		std::vector<int> output_stride = get_stride_from_shape(output_shape);
+		output_stride = get_stride_from_shape(output_shape);
+		A_stride = get_stride_from_shape(A_shape);
+		B_stride = get_stride_from_shape(B_shape);
+
+		std::cout << "INFO: naive strides found...\n";
+
+		//Find possible singleton dimensions in inputs and output
+		std::vector<bool> output_singleton_dimensions = singleton_dimension_mask(output_view_shape);
+		std::vector<bool> A_singleton_dimensions = singleton_dimension_mask(A_view_shape);
+		std::vector<bool> B_singleton_dimensions = singleton_dimension_mask(B_view_shape);
+
+		std::cout << "INFO: Singleton masks found...\n";
+
+		//Output is correctly strided by assumption: If you supply correct dimension of output i will loop trough every entry exactly once with strides calculated from you supplied shape.
+		//If inputs is not the same dimensions as output, we get in trouble with naive strides. We instead must rearrange the strides of inputs such that:
+		//1: Strides corresponding to singelton dimensions gets removed from "stride pool"
+		//2: stride pool is then arranged in-order skipping any singleton dimensions in the output. 
+
+		rebuild_stride(A_stride, A_singleton_dimensions, output_singleton_dimensions);
+		rebuild_stride(B_stride, B_singleton_dimensions, output_singleton_dimensions);
+		//remove_leading_zeros(output_stride);
+
+		std::cout << "INFO: Rebuild strides taking singletons dimensions into account";
+
+		//create "looping over" vectors (seems stupid to it this way...)
+		std::vector<std::vector<int>> input_strides = {A_stride, B_stride};
 		std::vector<std::vector<int>> input_offset = {A_offset, B_offset};
 
 		//print debug info:
@@ -236,6 +430,20 @@ void run_broadcast_kernel(std::string kernel_name,
 		print_vec(B_shape);
 		std::cout << "Out_shapes ";
 		print_vec(output_shape);
+
+		std::cout << "A_view_shapes: ";
+		print_vec(A_view_shape);
+		std::cout << "B_view_shapes: ";
+		print_vec(B_view_shape);
+		std::cout << "output_view_shapes ";
+		print_vec(output_view_shape);
+
+		std::cout << "Singleton dimenions A:";
+		print_vec(A_singleton_dimensions);
+		std::cout << "Singleton dimenions B:";
+		print_vec(B_singleton_dimensions);
+		std::cout << "Singleton dimenions output:";
+		print_vec(output_singleton_dimensions);
 
 		std::cout << "A_offset: ";
 		print_vec(A_offset);
@@ -439,7 +647,6 @@ int main(int argc, const char *argv[])
 	xt::xarray<double> d_tri = xt::zeros<double>({X-4, Y-4, Z});
 	xt::xarray<double> delta = xt::zeros<double>({X-4, Y-4, Z});
 
-
 	/* this block might be not needed!
 	u_data = u.data();
 	v_data = v.data();
@@ -473,8 +680,6 @@ int main(int argc, const char *argv[])
 	delta_data = delta.data();
 	*/
 
-
-
 	int tau = 0;
 	double taup1 = 1.;
 	double taum1 = 2.;
@@ -488,69 +693,149 @@ int main(int argc, const char *argv[])
 
 	std::vector<double *> inputs;
 	std::vector<double *> outputs;
+
 	int tmp_int;
 
-	/*inputs = {
-				xt::view(tke, xt::all(), xt::all(), xt::all(), tau).data(), 
-				flux_east.data()
-			}; 
+	xt::xarray<double> one = xt::ones<double>({1});
+	xt::xarray<double> zero = xt::zeros<double>({1});
+	xt::xarray<double> half = xt::ones<double>({1}) * 0.5;
+	xt::xarray<double> two = xt::ones<double>({1}) * 2;
+	
+	
+	inputs = {tke.data(), zero.data()};
 	outputs = {sqrttke.data()};
-	run_kernel("vmax", size_3d, inputs, outputs, devices, context, bins, q); //these dont broadcast yet! might be a biiig problemo
+	run_broadcast_kernel("max4d", inputs, outputs, 
+		{X, Y, Z, 3}, {1}, {X, Y, Z},			//shapes
+		{0, 0, 0, 0}, {0}, {0, 0, 0,},			//start index
+		{0, 0, 0, -2}, {0}, {0, 0, 0}, 			//negativ end index
+		devices, context, bins, q);
 
 	inputs = {sqrttke.data()};
 	outputs = {sqrttke.data()};
 	run_kernel("vsqrt", size_3d, inputs, outputs, devices, context, bins, q);
-	*/
 
-
-	xt::xarray<double> one = xt::ones<double>({1});
-	xt::xarray<double> zero = xt::zeros<double>({1});
-
-	
-	inputs = {one.data(), dzt.data()};
+	inputs = {kappaM.data(), kappaM.data()};
 	outputs = {delta.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
-		{1}, {Z}, {X-4, Y-4, Z},		//shapes
-		{0,}, {1}, {0, 0, 0,},			//start index
-		{0,}, {0}, {0, 0, -1}, 		//negativ end index
+	run_broadcast_kernel("add3d", inputs, outputs, 
+		{X, Y, Z}, {X,Y,Z}, {X-4, Y-4, Z},			//shapes
+		{2, 2, 0}, {2, 2, 1}, {0, 0, 0,},			//start index
+		{-2, -2, -1}, {-2, -2, 0}, {0, 0, -1}, 		//negativ end index
 		devices, context, bins, q);
-
-	std::cout << "YO!!!: result of sum of delta: (after i divide 1/dzt...)" << xt::sum(delta) << std::endl;
-
-	xt::xarray<double> half = xt::ones<double>({1}) * 0.5;
 
 	inputs = {half.data(), delta.data()};
 	outputs = {delta.data()};
 	run_broadcast_kernel("mult3d", inputs, outputs, 
-		{1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},		//shapes
-		{0,}, {0, 0, 0}, {0, 0, 0,},			//start index
-		{0,}, {0, 0, -1}, {0, 0, -1}, 		//negativ end index
+		{1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},			//shapes
+		{0,}, {0, 0, 0}, {0, 0, 0,},				//start index
+		{0,}, {0, 0, -1}, {0, 0, -1}, 				//negativ end index
 		devices, context, bins, q);
 
-	std::cout << "YO!!!: result of sum of delta: (after i multiple by some constant...)" << xt::sum(delta) << std::endl;
-	
-	xt::xarray<double> temp = xt::zeros<double>(kappaM.shape());
-
-	inputs = {kappaM.data(), kappaM.data()};
-	outputs = {temp.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
-		{X, Y, Z}, {X,Y,Z}, {X, Y, Z},		//shapes
-		{2, 2, 0}, {2, 2, 1}, {2, 2, 0,},			//start index
-		{-2, -2, -1}, {-2, -2, 0}, {-2, -2, -1}, 		//negativ end index
-		devices, context, bins, q);
-
-	std::cout << "YO!!!: Sum of kappa_M delta: " << xt::sum(temp) << std::endl;
-	inputs = {delta.data(), temp.data()};
+	inputs = {delta.data(), dzt.data()};
 	outputs = {delta.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
-		{X-4, Y-4, Z}, {X, Y, Z}, {X-4, Y-4, Z},		//shapes
-		{0, 0, 0}, {2, 2, 0}, {0, 0, 0,},			//start index
-		{0, 0, -1}, {-2, -2, -1}, {0, 0, -1}, 		//negativ end index
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},			//shapes
+		{0, 0, 0}, {1}, {0, 0, 0,},					//start index
+		{0, 0, -1}, {0}, {0, 0, -1}, 				//negativ end index
 		devices, context, bins, q);
 
-	std::cout << "YO!!!: result of sum of delta: (after we multply by kappaM)" << xt::sum(delta) << std::endl;
-	
+	inputs = {zero.data(), delta.data(), };
+	outputs = {a_tri.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},			//shapes
+		{0}, {0,0,0}, {0, 0, 1,},					//start index
+		{0}, {0,0,-2}, {0, 0, -1}, 					//negativ end index
+		devices, context, bins, q);
 
+	inputs = {a_tri.data(), dzw.data(), };
+	outputs = {a_tri.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},			//shapes
+		{0, 0, 1}, {1}, {0, 0, 1,},					//start index
+		{0, 0, -1}, {-1}, {0, 0, -1}, 				//negativ end index
+		devices, context, bins, q);
+
+	inputs = {zero.data(), delta.data(), };
+	outputs = {a_tri.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},			//shapes
+		{0}, {0, 0, Z-2}, {0, 0, Z-1,},				//start index
+		{0}, {0, 0, -1}, {0, 0, 0}, 				//negativ end index
+		devices, context, bins, q);
+
+	inputs = {a_tri.data(), two.data(), };
+	outputs = {a_tri.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
+		{0, 0, Z-1}, {0}, {0, 0, Z-1,},				//start index
+		{0, 0, 0}, {0}, {0, 0, 0}, 					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {a_tri.data(), dzw.data(), };
+	outputs = {a_tri.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},			//shapes
+		{0, 0, Z-1}, {Z-1}, {0, 0, Z-1,},			//start index
+		{0, 0, 0}, {0}, {0, 0, 0}, 					//negativ end index
+		devices, context, bins, q);
+
+	xt::xarray<double> b_tri_tmp = xt::zeros<double>({X-4, Y-4, Z});
+
+	inputs = {delta.data(), delta.data() };
+	outputs = {b_tri_tmp.data()};
+	run_broadcast_kernel("add3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},//shapes
+		{0, 0, 1}, {0, 0, 0}, {0, 0, 1,},			//start index
+		{0, 0, -1}, {0, 0, -2}, {0, 0, -1},			//negativ end index
+		devices, context, bins, q);
+
+	inputs = {b_tri_tmp.data(), dzw.data() };
+	outputs = {b_tri_tmp.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},			//shapes
+		{0, 0, 1}, {1}, {0, 0, 1,},					//start index
+		{0, 0, -1}, {-1}, {0, 0, -1}, 				//negativ end index
+		devices, context, bins, q);
+
+	inputs = {b_tri_tmp.data(), one.data() };
+	outputs = {b_tri.data()};
+	run_broadcast_kernel("add3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
+		{0, 0, 1}, {0}, {0, 0, 1,},					//start index
+		{0, 0, -1}, {0}, {0, 0, -1}, 				//negativ end index
+		devices, context, bins, q);
+
+	// NOTE! SQRTKE IS CONTAINING NEGATIVE NUMERS AND MIGHT NOT EVEN EXISDT
+	inputs = {sqrttke.data(), mxl.data() };
+	outputs = {b_tri_tmp.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},//shapes
+		{2, 2, 1}, {2, 2, -1}, {0, 0, 1,},			//start index
+		{-2, -2, -1}, {-2, -2, -1}, {0, 0, -1},		//negativ end index
+		devices, context, bins, q);
+
+	xt::xarray<double> c_eps_hack = xt::ones<double>({1}) * c_eps;
+
+	inputs = {b_tri_tmp.data(), c_eps_hack.data() };
+	outputs = {b_tri_tmp.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
+		{0, 0, 1}, {0}, {0, 0, 1,},					//start index
+		{0, 0, -1}, {0}, {0, 0, -1},				//negativ end index
+		devices, context, bins, q);
+
+	inputs = {b_tri.data(), b_tri_tmp.data() };
+	outputs = {b_tri.data()};
+	run_broadcast_kernel("add3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},//shapes
+		{0, 0, 1}, {0, 0, 1}, {0, 0, 1,},			//start index
+		{0, 0, -1}, {0, 0, -1}, {0, 0, -1},			//negativ end index
+		devices, context, bins, q);
+
+	
+	std::cout << "delta checksum: should be 85...: " << xt::sum(delta) << std::endl;
+	std::cout << "sqrttke checksum: should be 1679...: " << xt::sum(sqrttke) << std::endl;
+
+	std::cout << "b_tri checksum: should be -911...: " << xt::sum(b_tri) << std::endl;
 
 	return 0;
 }
