@@ -701,7 +701,7 @@ int main(int argc, const char *argv[])
 	xt::xarray<double> half = xt::ones<double>({1}) * 0.5;
 	xt::xarray<double> two = xt::ones<double>({1}) * 2;
 	
-	
+	//sqrttke
 	inputs = {tke.data(), zero.data()};
 	outputs = {sqrttke.data()};
 	run_broadcast_kernel("max4d", inputs, outputs, 
@@ -714,6 +714,7 @@ int main(int argc, const char *argv[])
 	outputs = {sqrttke.data()};
 	run_kernel("vsqrt", size_3d, inputs, outputs, devices, context, bins, q);
 
+	//delta
 	inputs = {kappaM.data(), kappaM.data()};
 	outputs = {delta.data()};
 	run_broadcast_kernel("add3d", inputs, outputs, 
@@ -738,6 +739,7 @@ int main(int argc, const char *argv[])
 		{0, 0, -1}, {0}, {0, 0, -1}, 				//negativ end index
 		devices, context, bins, q);
 
+	//a_tri
 	inputs = {zero.data(), delta.data(), };
 	outputs = {a_tri.data()};
 	run_broadcast_kernel("sub3d", inputs, outputs, 
@@ -788,6 +790,7 @@ int main(int argc, const char *argv[])
 		{0, 0, -1}, {0, 0, -2}, {0, 0, -1},			//negativ end index
 		devices, context, bins, q);
 
+
 	inputs = {b_tri_tmp.data(), dzw.data() };
 	outputs = {b_tri_tmp.data()};
 	run_broadcast_kernel("div3d", inputs, outputs, 
@@ -796,6 +799,7 @@ int main(int argc, const char *argv[])
 		{0, 0, -1}, {-1}, {0, 0, -1}, 				//negativ end index
 		devices, context, bins, q);
 
+	
 	inputs = {b_tri_tmp.data(), one.data() };
 	outputs = {b_tri.data()};
 	run_broadcast_kernel("add3d", inputs, outputs, 
@@ -803,12 +807,11 @@ int main(int argc, const char *argv[])
 		{0, 0, 1}, {0}, {0, 0, 1,},					//start index
 		{0, 0, -1}, {0}, {0, 0, -1}, 				//negativ end index
 		devices, context, bins, q);
-
-	// NOTE! SQRTKE IS CONTAINING NEGATIVE NUMERS AND MIGHT NOT EVEN EXISDT
+	
 	inputs = {sqrttke.data(), mxl.data() };
 	outputs = {b_tri_tmp.data()};
 	run_broadcast_kernel("div3d", inputs, outputs, 
-		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},//shapes
+		{X-4, Y-4, Z}, {X, Y, Z}, {X-4, Y-4, Z},	//shapes
 		{2, 2, 1}, {2, 2, -1}, {0, 0, 1,},			//start index
 		{-2, -2, -1}, {-2, -2, -1}, {0, 0, -1},		//negativ end index
 		devices, context, bins, q);
@@ -830,12 +833,9 @@ int main(int argc, const char *argv[])
 		{0, 0, 1}, {0, 0, 1}, {0, 0, 1,},			//start index
 		{0, 0, -1}, {0, 0, -1}, {0, 0, -1},			//negativ end index
 		devices, context, bins, q);
-
-	
 	std::cout << "delta checksum: should be 85...: " << xt::sum(delta) << std::endl;
 	std::cout << "sqrttke checksum: should be 1679...: " << xt::sum(sqrttke) << std::endl;
-
 	std::cout << "b_tri checksum: should be -911...: " << xt::sum(b_tri) << std::endl;
-
+	
 	return 0;
 }
