@@ -816,12 +816,41 @@ int main(int argc, const char *argv[])
 	//Skipping b_tri_edge because idk what it does. (why do i need it bro?)
 
 	//c_tri
+	inputs = {zero.data(), delta.data() };
+	outputs = {c_tri.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},//shapes
+		{0}, {0, 0, 0}, {0, 0, 0,},		//start index
+		{0}, {0, 0, -1}, {0, 0, -1},			//negativ end index
+		devices, context, bins, q);
+
+	inputs = {c_tri.data(), dzw.data() };
+	outputs = {c_tri.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},//shapes
+		{0, 0, 0}, {0}, {0, 0, 0,},		//start index
+		{0, 0, -1}, {-1}, {0, 0, -1},			//negativ end index
+		devices, context, bins, q);
+
+	//d_tri
+	inputs = {tke.data(), forc.data() };
+	outputs = {d_tri.data()};
+	run_broadcast_kernel("add4d", inputs, outputs, 
+		{X, Y, Z, 3}, {X, Y, Z, 1}, {X-4, Y-4, Z, 1},//shapes
+		{2, 2, 0, 0}, {2, 2, 0, 0}, {0, 0, 0, 0},		//start index
+		{-2, -2, 0, -2}, {-2, -2, 0, 0}, {0, 0, 0, 0},			//negativ end index
+		devices, context, bins, q);
+	
+	std::cout << d_tri;
+	std::cout << xt::sum(d_tri);
 
 
 	std::cout << "sqrttke checksum: should be 1679...: " << xt::sum(sqrttke) << std::endl;
 	std::cout << "delta checksum: should be 85...: " << xt::sum(delta) << std::endl;
 	std::cout << "a_tri checksum: should be 689.96...: " << xt::sum(a_tri) << std::endl;
 	std::cout << "b_tri checksum: should be -629...: " << xt::sum(b_tri) << std::endl;
+	std::cout << "c_tri checksum: should be 835...: " << xt::sum(c_tri) << std::endl;
+
 
 	return 0;
 }

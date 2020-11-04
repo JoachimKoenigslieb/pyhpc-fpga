@@ -71,8 +71,10 @@ b_tri[:, :, 1:-1] = 1 + \
 b_tri[:, :, -1] = 1 + delta[:, :, -2] / (0.5 * dzw[-1]) \
         + dt_tke * c_eps / mxl[2:-2, 2:-2, -1] * sqrttke[2:-2, 2:-2, -1]
 
+c_tri[:, :, :-1] = -delta[:, :, :-1] / dzw[np.newaxis, np.newaxis, :-1]
 
 print(f'sqrttke checksum: {sqrttke.sum()}')
 print(f'delta checksum: {delta.sum()}')
 print(f'a_tri checksum: {a_tri.sum()}')
 print(f'b_tri checksum: {b_tri.sum()}')
+print(f'c_tri checksum: {c_tri.sum()}')
