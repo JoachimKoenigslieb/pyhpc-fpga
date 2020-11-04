@@ -282,13 +282,12 @@ void rebuild_stride(std::vector<int> &stride, std::vector<bool> input_singleton_
 	int available_strides = stride_pool.size();
 	std::vector<int> fixed_strides(dimensions);
 	for (int i=0; i<available_strides; i++){
-		fixed_strides[output_mask_where.back()] = stride_pool.back();
+		stride[output_mask_where.back()] = stride_pool.back();
 		stride_pool.pop_back();
 		output_mask_where.pop_back();
 	}
 
 	pad_begin(fixed_strides, 0, dimensions);
-	stride = fixed_strides;
 	/*
 
 	if (stride_pool.size() == 0){
@@ -580,42 +579,6 @@ int main(int argc, const char *argv[])
 	int size_1d_vert = Z;
 	int size_1d_hoz = X; //assert(X == Y)!!!
 
-	// Initialization of data
-
-	/* i think this is not needed. idk why i dont get mem errors for using non aligned memory 
-	double *u_data = aligned_alloc<double>(size_4d);
-	double *v_data = aligned_alloc<double>(size_4d);
-	double *w_data = aligned_alloc<double>(size_4d);
-	double *maskU_data = aligned_alloc<double>(size_3d);
-	double *maskV_data = aligned_alloc<double>(size_3d);
-	double *maskW_data = aligned_alloc<double>(size_3d);
-	double *dxt_data = aligned_alloc<double>(size_1d_hoz);
-	double *dxu_data = aligned_alloc<double>(size_1d_hoz);
-	double *dyt_data = aligned_alloc<double>(size_1d_hoz);
-	double *dyu_data = aligned_alloc<double>(size_1d_hoz);
-	double *dzt_data = aligned_alloc<double>(size_1d_vert);
-	double *dzw_data = aligned_alloc<double>(size_1d_vert);
-	double *cost_data = aligned_alloc<double>(size_1d_hoz);
-	double *cosu_data = aligned_alloc<double>(size_1d_hoz);
-	double *kbot_data = aligned_alloc<double>(size_2d);
-	double *forc_tke_surface_data = aligned_alloc<double>(size_2d);
-	double *kappaM_data = aligned_alloc<double>(size_3d);
-	double *mxl_data = aligned_alloc<double>(size_3d);
-	double *forc_data = aligned_alloc<double>(size_3d);
-	double *tke_data = aligned_alloc<double>(size_4d);
-	double *dtke_data = aligned_alloc<double>(size_4d);
-	double *flux_east_data = aligned_alloc<double>(size_3d);
-	double *flux_north_data = aligned_alloc<double>(size_3d);
-	double *flux_top_data = aligned_alloc<double>(size_3d);
-	double *temp_data_3d = aligned_alloc<double>(size_3d);
-	double *sqrttke_data = aligned_alloc<double>(size_3d);
-	double *a_tri_data = aligned_alloc<double>((Y-4) * (X - 4));
-	double *b_tri_data = aligned_alloc<double>((Y-4) * (X - 4));
-	double *c_tri_data = aligned_alloc<double>((Y-4) * (X - 4));
-	double *d_tri_data = aligned_alloc<double>((Y-4) * (X - 4));
-	double *delta_data = aligned_alloc<double>((Y-4) * (X - 4));
-	*/
-
 	xt::xarray<double> u = xt::load_npy<double>("../src/numpy_files/u.npy");
 	xt::xarray<double> v = xt::load_npy<double>("../src/numpy_files/v.npy");
 	xt::xarray<double> w = xt::load_npy<double>("../src/numpy_files/w.npy");
@@ -646,39 +609,6 @@ int main(int argc, const char *argv[])
 	xt::xarray<double> c_tri = xt::zeros<double>({X-4, Y-4, Z});
 	xt::xarray<double> d_tri = xt::zeros<double>({X-4, Y-4, Z});
 	xt::xarray<double> delta = xt::zeros<double>({X-4, Y-4, Z});
-
-	/* this block might be not needed!
-	u_data = u.data();
-	v_data = v.data();
-	w_data = w.data();
-	maskU_data = maskU.data();
-	maskV_data = maskV.data();
-	maskW_data = maskW.data();
-	dxt_data = dxt.data();
-	dxu_data = dxu.data();
-	dyt_data = dyt.data();
-	dyu_data = dyu.data();
-	dzt_data = dzt.data();
-	dzw_data = dzw.data();
-	cost_data = cost.data();
-	cosu_data = cosu.data();
-	kbot_data = kbot.data();
-	forc_tke_surface_data = forc_tke_surface.data();
-	kappaM_data = kappaM.data();
-	mxl_data = mxl.data();
-	forc_data = forc.data();
-	tke_data = tke.data();
-	dtke_data = dtke.data();
-	flux_east_data = flux_east.data();
-	flux_north_data = flux_north.data();
-	flux_top_data = flux_top.data();
-	sqrttke_data = sqrttke.data();
-	a_tri_data = a_tri.data();
-	b_tri_data = b_tri.data();
-	c_tri_data = c_tri.data();
-	d_tri_data = d_tri.data();
-	delta_data = delta.data();
-	*/
 
 	int tau = 0;
 	double taup1 = 1.;
@@ -738,7 +668,7 @@ int main(int argc, const char *argv[])
 		{0, 0, 0}, {1}, {0, 0, 0,},					//start index
 		{0, 0, -1}, {0}, {0, 0, -1}, 				//negativ end index
 		devices, context, bins, q);
-
+	
 	//a_tri
 	inputs = {zero.data(), delta.data(), };
 	outputs = {a_tri.data()};
@@ -780,8 +710,8 @@ int main(int argc, const char *argv[])
 		{0, 0, 0}, {0}, {0, 0, 0}, 					//negativ end index
 		devices, context, bins, q);
 
+	//b_tri
 	xt::xarray<double> b_tri_tmp = xt::zeros<double>({X-4, Y-4, Z});
-
 	inputs = {delta.data(), delta.data() };
 	outputs = {b_tri_tmp.data()};
 	run_broadcast_kernel("add3d", inputs, outputs, 
@@ -789,8 +719,6 @@ int main(int argc, const char *argv[])
 		{0, 0, 1}, {0, 0, 0}, {0, 0, 1,},			//start index
 		{0, 0, -1}, {0, 0, -2}, {0, 0, -1},			//negativ end index
 		devices, context, bins, q);
-
-
 	inputs = {b_tri_tmp.data(), dzw.data() };
 	outputs = {b_tri_tmp.data()};
 	run_broadcast_kernel("div3d", inputs, outputs, 
@@ -799,7 +727,6 @@ int main(int argc, const char *argv[])
 		{0, 0, -1}, {-1}, {0, 0, -1}, 				//negativ end index
 		devices, context, bins, q);
 
-	
 	inputs = {b_tri_tmp.data(), one.data() };
 	outputs = {b_tri.data()};
 	run_broadcast_kernel("add3d", inputs, outputs, 
@@ -809,13 +736,13 @@ int main(int argc, const char *argv[])
 		devices, context, bins, q);
 	
 	inputs = {sqrttke.data(), mxl.data() };
-	outputs = {b_tri_tmp.data()};
+	outputs = {b_tri_tmp.data()}; //reuse tmp array as we have move intermediate result back to b_tri
 	run_broadcast_kernel("div3d", inputs, outputs, 
-		{X-4, Y-4, Z}, {X, Y, Z}, {X-4, Y-4, Z},	//shapes
-		{2, 2, 1}, {2, 2, -1}, {0, 0, 1,},			//start index
+		{X, Y, Z}, {X, Y, Z}, {X-4, Y-4, Z},	//shapes
+		{2, 2, 1}, {2, 2, 1}, {0, 0, 1,},			//start index
 		{-2, -2, -1}, {-2, -2, -1}, {0, 0, -1},		//negativ end index
 		devices, context, bins, q);
-
+	
 	xt::xarray<double> c_eps_hack = xt::ones<double>({1}) * c_eps;
 
 	inputs = {b_tri_tmp.data(), c_eps_hack.data() };
@@ -833,9 +760,68 @@ int main(int argc, const char *argv[])
 		{0, 0, 1}, {0, 0, 1}, {0, 0, 1,},			//start index
 		{0, 0, -1}, {0, 0, -1}, {0, 0, -1},			//negativ end index
 		devices, context, bins, q);
-	std::cout << "delta checksum: should be 85...: " << xt::sum(delta) << std::endl;
-	std::cout << "sqrttke checksum: should be 1679...: " << xt::sum(sqrttke) << std::endl;
-	std::cout << "b_tri checksum: should be -911...: " << xt::sum(b_tri) << std::endl;
 	
+	xt::xarray<double> b_tri_tmp_ind = xt::zeros_like(b_tri_tmp);
+	xt::xarray<double> b_tri_fake = xt::zeros_like(b_tri_tmp);
+
+	//b_tri last index only.
+	inputs = {delta.data(), dzw.data() };
+	outputs = {b_tri_tmp.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},			//shapes
+		{0, 0, Z-2}, {Z-1}, {0, 0, Z-1},			//start index
+		{0, 0, -1}, {0}, {0, 0, 0},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {b_tri_tmp.data(), two.data() };
+	outputs = {b_tri_tmp.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
+		{0, 0, Z-1}, {0}, {0, 0, Z-1},				//start index
+		{0, 0, 0}, {0}, {0, 0, 0},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {b_tri_tmp.data(), one.data() };
+	outputs = {b_tri.data()};
+	run_broadcast_kernel("add3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
+		{0, 0, Z-1}, {0}, {0, 0, Z-1},				//start index
+		{0, 0, 0}, {0}, {0, 0, 0},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {sqrttke.data(), mxl.data() };
+	outputs = {b_tri_tmp.data()}; //reuse tmp array as we have move intermediate result back to b_tri
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X, Y, Z}, {X, Y, Z}, {X-4, Y-4, Z},		//shapes
+		{2, 2, Z-1}, {2, 2, Z-1}, {0, 0, Z-1,},		//start index
+		{-2, -2, 0}, {-2, -2, 0}, {0, 0, 0},		//negativ end index
+		devices, context, bins, q);
+	
+	inputs = {b_tri_tmp.data(), c_eps_hack.data() };
+	outputs = {b_tri_tmp.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
+		{0, 0, Z-1}, {0}, {0, 0, Z-1,},				//start index
+		{0, 0, 0}, {0}, {0, 0, 0},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {b_tri.data(), b_tri_tmp.data() };
+	outputs = {b_tri.data()};
+	run_broadcast_kernel("add3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},//shapes
+		{0, 0, Z-1}, {0, 0, Z-1}, {0, 0, Z-1,},		//start index
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},			//negativ end index
+		devices, context, bins, q);
+
+	//Skipping b_tri_edge because idk what it does. (why do i need it bro?)
+
+	//c_tri
+
+
+	std::cout << "sqrttke checksum: should be 1679...: " << xt::sum(sqrttke) << std::endl;
+	std::cout << "delta checksum: should be 85...: " << xt::sum(delta) << std::endl;
+	std::cout << "a_tri checksum: should be 689.96...: " << xt::sum(a_tri) << std::endl;
+	std::cout << "b_tri checksum: should be -629...: " << xt::sum(b_tri) << std::endl;
+
 	return 0;
 }

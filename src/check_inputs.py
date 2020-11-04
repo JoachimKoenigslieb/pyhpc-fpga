@@ -57,9 +57,9 @@ c_tri = np.zeros_like(maskU[2:-2, 2:-2])
 d_tri = np.zeros_like(maskU[2:-2, 2:-2])
 delta = np.zeros_like(maskU[2:-2, 2:-2])
 
+
 delta[:, :, :-1] = 1 / dzt[np.newaxis, np.newaxis, 1:] * alpha_tke * 0.5 * dt_tke\
         * (kappaM[2:-2, 2:-2, :-1] + kappaM[2:-2, 2:-2, 1:])
-
 a_tri[:, :, 1:-1] = -delta[:, :, :-2] / \
         dzw[np.newaxis, np.newaxis, 1:-1]
 a_tri[:, :, -1] = -delta[:, :, -2] / (0.5 * dzw[-1])
@@ -68,4 +68,11 @@ b_tri[:, :, 1:-1] = 1 + \
 		(delta[:, :, 1:-1] + delta[:, :, :-2]) / dzw[np.newaxis, np.newaxis, 1:-1] + \
 		dt_tke * c_eps * sqrttke[2:-2, 2:-2, 1:-1] / mxl[2:-2, 2:-2, 1:-1]
 
-print(b_tri.sum())
+b_tri[:, :, -1] = 1 + delta[:, :, -2] / (0.5 * dzw[-1]) \
+        + dt_tke * c_eps / mxl[2:-2, 2:-2, -1] * sqrttke[2:-2, 2:-2, -1]
+
+
+print(f'sqrttke checksum: {sqrttke.sum()}')
+print(f'delta checksum: {delta.sum()}')
+print(f'a_tri checksum: {a_tri.sum()}')
+print(f'b_tri checksum: {b_tri.sum()}')
