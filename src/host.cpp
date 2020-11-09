@@ -246,10 +246,22 @@ void remove_leading_zeros(std::vector<int> &v){
 	v = std::vector<int>(v.begin() + leading_zeros, v.end());
 }
 
+bool mask_equality(std::vector<bool> mask_A, std::vector<bool> mask_B){
+	int dims = mask_A.size();
+
+	for (int i=0; i<dims; i++){
+		if (mask_A[i] != mask_B[i]){
+			return false;
+		}
+	}
+	return true;
+}
+
 void rebuild_stride(std::vector<int> &stride, std::vector<bool> input_singleton_mask, std::vector<bool> output_singleton_mask){
 	std::vector<int> stride_pool;
 	int dimensions = output_singleton_mask.size();
 
+	
 	std::cout << "Attempting to rebuild strides for stride vector ";
 	print_vec(stride);
 	std::cout << "Input mask is ";
@@ -257,6 +269,7 @@ void rebuild_stride(std::vector<int> &stride, std::vector<bool> input_singleton_
 	std::cout << "Output mask is ";
 	print_vec(output_singleton_mask);
 	std::cout << "Building stride pool...\n";
+	
 
 	for (int i=0; i<dimensions; i++){
 		if (!input_singleton_mask[i]){
@@ -264,11 +277,11 @@ void rebuild_stride(std::vector<int> &stride, std::vector<bool> input_singleton_
 		}
 	}
 
+	
 	std::cout << "stride pool is: ";
-
 	print_vec(stride_pool);
 	std::cout << "rebulding stride...\n";
-
+	
 	std::vector<int> output_mask_where;
 	for (int i=0; i<dimensions; i++){
 		if (!output_singleton_mask[i]){
@@ -280,37 +293,12 @@ void rebuild_stride(std::vector<int> &stride, std::vector<bool> input_singleton_
 	print_vec(output_mask_where);
 
 	int available_strides = stride_pool.size();
-	std::vector<int> fixed_strides(dimensions);
 	for (int i=0; i<available_strides; i++){
 		stride[output_mask_where.back()] = stride_pool.back();
 		stride_pool.pop_back();
 		output_mask_where.pop_back();
 	}
 
-	pad_begin(fixed_strides, 0, dimensions);
-	/*
-
-	if (stride_pool.size() == 0){
-		std::cout << "Stride pool is zero! Either we have a 0 dim array (A scalar), or something is wrong. Either way, imma early exit rebuilding stride...\n";
-		return;
-	}
-
-
-	for (int i=0; (i<dimensions && placed<max_place); i++){
-		std::cout << "Working on stride position: " << i << " and have placed: " << placed << "/" << max_place  << std::endl;
-		if (output_singleton_mask[i]==true){ //I think this should be elementwise and with input_singleton_mask. We cant put 
-			stride[i] = 0;
-			std::cout << "Output masks is true (ie, there is a singleton dim here) " << output_singleton_mask[i] << std::endl;
-		}
-		else {
-			stride[i] = stride_pool.back();
-			stride_pool.pop_back();
-			placed++;
-			std::cout << "We build the stride...\n";
-		}
-	}
-	//	remove_leading_zeros(stride);
-	*/
 	std::cout << "new stride:\n";
 	print_vec(stride);
 }
@@ -401,10 +389,12 @@ void run_broadcast_kernel(std::string kernel_name,
 		std::cout << "INFO: naive strides found...\n";
 
 		//Find possible singleton dimensions in inputs and output
-		std::vector<bool> output_singleton_dimensions = singleton_dimension_mask(output_view_shape);
-		std::vector<bool> A_singleton_dimensions = singleton_dimension_mask(A_view_shape);
-		std::vector<bool> B_singleton_dimensions = singleton_dimension_mask(B_view_shape);
-
+		std::vector<bool> output_view_singleton_dimensions = singleton_dimension_mask(output_view_shape);
+		std::vector<bool> A_view_singleton_dimensions = singleton_dimension_mask(A_view_shape);
+		std::vector<bool> B_view_singleton_dimensions = singleton_dimension_mask(B_view_shape);
+		
+		std::vector<bool> A_singleton_dimensions = singleton_dimension_mask(A_shape);
+		std::vector<bool> B_singleton_dimensions = singleton_dimension_mask(B_shape);
 		std::cout << "INFO: Singleton masks found...\n";
 
 		//Output is correctly strided by assumption: If you supply correct dimension of output i will loop trough every entry exactly once with strides calculated from you supplied shape.
@@ -412,9 +402,10 @@ void run_broadcast_kernel(std::string kernel_name,
 		//1: Strides corresponding to singelton dimensions gets removed from "stride pool"
 		//2: stride pool is then arranged in-order skipping any singleton dimensions in the output. 
 
-		rebuild_stride(A_stride, A_singleton_dimensions, output_singleton_dimensions);
-		rebuild_stride(B_stride, B_singleton_dimensions, output_singleton_dimensions);
-		//remove_leading_zeros(output_stride);
+		if (!mask_equality(A_singleton_dimensions, A_view_singleton_dimensions) || !mask_equality(B_singleton_dimensions, B_view_singleton_dimensions)){
+			rebuild_stride(A_stride, A_view_singleton_dimensions, output_view_singleton_dimensions);
+			rebuild_stride(B_stride, B_view_singleton_dimensions, output_view_singleton_dimensions);
+		}
 
 		std::cout << "INFO: Rebuild strides taking singletons dimensions into account";
 
@@ -438,11 +429,11 @@ void run_broadcast_kernel(std::string kernel_name,
 		print_vec(output_view_shape);
 
 		std::cout << "Singleton dimenions A:";
-		print_vec(A_singleton_dimensions);
+		print_vec(A_view_singleton_dimensions);
 		std::cout << "Singleton dimenions B:";
-		print_vec(B_singleton_dimensions);
+		print_vec(B_view_singleton_dimensions);
 		std::cout << "Singleton dimenions output:";
-		print_vec(output_singleton_dimensions);
+		print_vec(output_view_singleton_dimensions);
 
 		std::cout << "A_offset: ";
 		print_vec(A_offset);
@@ -606,9 +597,11 @@ int main(int argc, const char *argv[])
 	xt::xarray<double> sqrttke = xt::empty<double>({X, Y, Z});
 	xt::xarray<double> a_tri = xt::zeros<double>({X-4, Y-4, Z});
 	xt::xarray<double> b_tri = xt::zeros<double>({X-4, Y-4, Z});
+	xt::xarray<double> b_tri_edge = xt::zeros<double>({X-4, Y-4, Z});
 	xt::xarray<double> c_tri = xt::zeros<double>({X-4, Y-4, Z});
 	xt::xarray<double> d_tri = xt::zeros<double>({X-4, Y-4, Z});
 	xt::xarray<double> delta = xt::zeros<double>({X-4, Y-4, Z});
+	xt::xarray<double> ks = xt::zeros<double>({X-4, Y-4});
 
 	int tau = 0;
 	double taup1 = 1.;
@@ -643,6 +636,15 @@ int main(int argc, const char *argv[])
 	inputs = {sqrttke.data()};
 	outputs = {sqrttke.data()};
 	run_kernel("vsqrt", size_3d, inputs, outputs, devices, context, bins, q);
+
+	//kbot
+	inputs = {kbot.data(), one.data()};
+	outputs = {ks.data()};
+	run_broadcast_kernel("sub2d", inputs, outputs, 
+		{X, Y}, {1}, {X-4, Y-4,},			//shapes
+		{2, 2}, {0}, {0, 0},			//start index
+		{-2, -2}, {0}, {0, 0}, 			//negativ end index
+		devices, context, bins, q);
 
 	//delta
 	inputs = {kappaM.data(), kappaM.data()};
@@ -761,9 +763,6 @@ int main(int argc, const char *argv[])
 		{0, 0, -1}, {0, 0, -1}, {0, 0, -1},			//negativ end index
 		devices, context, bins, q);
 	
-	xt::xarray<double> b_tri_tmp_ind = xt::zeros_like(b_tri_tmp);
-	xt::xarray<double> b_tri_fake = xt::zeros_like(b_tri_tmp);
-
 	//b_tri last index only.
 	inputs = {delta.data(), dzw.data() };
 	outputs = {b_tri_tmp.data()};
@@ -813,43 +812,189 @@ int main(int argc, const char *argv[])
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},			//negativ end index
 		devices, context, bins, q);
 
-	//Skipping b_tri_edge because idk what it does. (why do i need it bro?)
+	//b_tri_edge
+	inputs = {delta.data(), dzw.data() };
+	outputs = {b_tri_edge.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},//shapes
+		{0, 0, 0}, {0}, {0, 0, 0},		//start index
+		{0, 0, 0}, {0}, {0, 0, 0},			//negativ end index
+		devices, context, bins, q);
+
+	inputs = {b_tri_edge.data(), one.data() };
+	outputs = {b_tri_edge.data()};
+	run_broadcast_kernel("add3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},//shapes
+		{0, 0, 0}, {0}, {0, 0, 0},		//start index
+		{0, 0, 0}, {0}, {0, 0, 0},			//negativ end index
+		devices, context, bins, q);
+
+	xt::xarray<double> b_tri_edge_tmp = xt::zeros_like(b_tri_edge);
+	inputs = {sqrttke.data(), mxl.data() };
+	outputs = {b_tri_edge_tmp.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X, Y, Z}, {X, Y, Z}, {X-4, Y-4, Z},//shapes
+		{2, 2, 0}, {2, 2, 0}, {0, 0, 0},		//start index
+		{-2, -2, 0}, {-2, -2, 0}, {0, 0, 0},			//negativ end index
+		devices, context, bins, q);
+
+	inputs = {b_tri_edge_tmp.data(), c_eps_hack.data() };
+	outputs = {b_tri_edge_tmp.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},//shapes
+		{0, 0, 0}, {0}, {0, 0, 0},		//start index
+		{0, 0, 0}, {0}, {0, 0, 0},			//negativ end index
+		devices, context, bins, q);
+
+	inputs = {b_tri_edge_tmp.data(), b_tri_edge.data() };
+	outputs = {b_tri_edge.data()};
+	run_broadcast_kernel("add3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},//shapes
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},		//start index
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},			//negativ end index
+		devices, context, bins, q);
 
 	//c_tri
 	inputs = {zero.data(), delta.data() };
 	outputs = {c_tri.data()};
 	run_broadcast_kernel("sub3d", inputs, outputs, 
-		{1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},//shapes
-		{0}, {0, 0, 0}, {0, 0, 0,},		//start index
-		{0}, {0, 0, -1}, {0, 0, -1},			//negativ end index
+		{1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},			//shapes
+		{0}, {0, 0, 0}, {0, 0, 0,},					//start index
+		{0}, {0, 0, -1}, {0, 0, -1},				//negativ end index
 		devices, context, bins, q);
 
 	inputs = {c_tri.data(), dzw.data() };
 	outputs = {c_tri.data()};
 	run_broadcast_kernel("div3d", inputs, outputs, 
-		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},//shapes
-		{0, 0, 0}, {0}, {0, 0, 0,},		//start index
-		{0, 0, -1}, {-1}, {0, 0, -1},			//negativ end index
+		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},			//shapes
+		{0, 0, 0}, {0}, {0, 0, 0,},					//start index
+		{0, 0, -1}, {-1}, {0, 0, -1},				//negativ end index
 		devices, context, bins, q);
 
-	//d_tri
+	//d_tri	
 	inputs = {tke.data(), forc.data() };
 	outputs = {d_tri.data()};
 	run_broadcast_kernel("add4d", inputs, outputs, 
-		{X, Y, Z, 3}, {X, Y, Z, 1}, {X-4, Y-4, Z, 1},//shapes
+		{X, Y, Z, 3}, {X, Y, Z, 1}, {X-4, Y-4, Z, 1},	//shapes
 		{2, 2, 0, 0}, {2, 2, 0, 0}, {0, 0, 0, 0},		//start index
-		{-2, -2, 0, -2}, {-2, -2, 0, 0}, {0, 0, 0, 0},			//negativ end index
+		{-2, -2, 0, -2}, {-2, -2, 0, 0}, {0, 0, 0, 0},	//negativ end index
+		devices, context, bins, q);
+
+	xt::xarray<double> d_tri_tmp = xt::zeros_like(d_tri);
+	inputs = {forc_tke_surface.data(), dzw.data() };
+	outputs = {d_tri_tmp.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X, Y, 1}, {Z}, {X-4, Y-4, Z},					//shapes
+		{2, 2, 0}, {Z-1}, {0, 0, Z-1},					//start index
+		{-2, -2, 0}, {0}, {0, 0, 0},						//negativ end index
 		devices, context, bins, q);
 	
-	std::cout << d_tri;
-	std::cout << xt::sum(d_tri);
+	inputs = {d_tri_tmp.data(), two.data() };
+	outputs = {d_tri_tmp.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},					//shapes
+		{0, 0, Z-1}, {0}, {0, 0, Z-1},					//start index
+		{0, 0, 0}, {0}, {0, 0, 0},						//negativ end index
+		devices, context, bins, q);
+
+	inputs = {d_tri_tmp.data(), d_tri.data() };
+	outputs = {d_tri.data()};
+	run_broadcast_kernel("add3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},					//shapes
+		{0, 0, Z-1}, {0, 0, Z-1}, {0, 0, Z-1},					//start index
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
+		devices, context, bins, q);
+
+	//SOLVE IMPLICIT FUNCTION UNROLL 
+	xt::xarray<double> land_mask = xt::zeros_like(ks);
+	xt::xarray<double> edge_mask = xt::zeros_like(a_tri);
+	xt::xarray<double> water_mask = xt::zeros_like(a_tri);
+
+	inputs = {ks.data(), zero.data() };
+	outputs = {land_mask.data()};
+	run_broadcast_kernel("get2d", inputs, outputs, 
+		{X-4, Y-4}, {1}, {X-4, Y-4},					//shapes
+		{0, 0}, {0}, {0, 0},					//start index
+		{0, 0}, {0}, {0, 0},						//negativ end index
+		devices, context, bins, q);
+	
+	xt::xarray<double> Z_dim_arange = xt::arange(Z);
+	inputs = {Z_dim_arange.data(), ks.data()};
+	outputs = {edge_mask.data()};
+	run_broadcast_kernel("eet3d", inputs, outputs, 
+		{Z}, {X-4, Y-4, 1}, {X-4, Y-4, Z},					//shapes
+		{0}, {0, 0, 0}, {0, 0, 0},					//start index
+		{0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
+		devices, context, bins, q);
+	
+	inputs = {land_mask.data(), edge_mask.data()};
+	outputs = {edge_mask.data()};
+	run_broadcast_kernel("and3d", inputs, outputs, 
+		{X-4, Y-4, 1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},					//shapes
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//start index
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
+		devices, context, bins, q);
+	
+	inputs = {Z_dim_arange.data(), ks.data()};
+	outputs = {water_mask.data()};
+	run_broadcast_kernel("get3d", inputs, outputs, 
+		{Z}, {X-4, Y-4, 1}, {X-4, Y-4, Z},					//shapes
+		{0}, {0, 0, 0}, {0, 0, 0},					//start index
+		{0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
+		devices, context, bins, q);
+	std::cout << water_mask << std::endl;
+
+	inputs = {land_mask.data(), water_mask.data()};
+	outputs = {water_mask.data()};
+	run_broadcast_kernel("and3d", inputs, outputs, 
+		{X-4, Y-4, 1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},					//shapes
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//start index
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
+		devices, context, bins, q);
+	
+
+	/*
+	//apply mask to tridiagonals
+	inputs = {a_tri.data(), water_mask.data()};
+	outputs = {a_tri.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},					//shapes
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//start index
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
+		devices, context, bins, q);
+
+	xt::xarray<double> not_edge_mask = xt::zeros_like(edge_mask);
+
+	inputs = {not_edge_mask.data(), zero.data()};
+	outputs = {not_edge_mask.data()};
+	run_broadcast_kernel("not3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},					//shapes
+		{0, 0, 0}, {0, }, {0, 0, 0},					//start index
+		{0, 0, 0}, {0, }, {0, 0, 0},						//negativ end index
+		devices, context, bins, q);
+	
+	inputs = {not_edge_mask.data(), a_tri.data()};
+	outputs = {a_tri.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},					//shapes
+		{0, 0, 0}, {0, 0, 0,}, {0, 0, 0},					//start index
+		{0, 0, 0}, {0, 0, 0,}, {0, 0, 0},						//negativ end index
+		devices, context, bins, q);
+	*/
+	
 
 
 	std::cout << "sqrttke checksum: should be 1679...: " << xt::sum(sqrttke) << std::endl;
+	std::cout << "ks checksum: should be 377...: " << xt::sum(ks) << std::endl;
 	std::cout << "delta checksum: should be 85...: " << xt::sum(delta) << std::endl;
 	std::cout << "a_tri checksum: should be 689.96...: " << xt::sum(a_tri) << std::endl;
 	std::cout << "b_tri checksum: should be -629...: " << xt::sum(b_tri) << std::endl;
+	std::cout << "b_tri_edge checksum: should be 527...: " << xt::sum(b_tri_edge) << std::endl;
 	std::cout << "c_tri checksum: should be 835...: " << xt::sum(c_tri) << std::endl;
+	std::cout << "d_tri checksum: should be 115.9...: " << xt::sum(d_tri) << std::endl;
+	std::cout << "land_mask checksum: should be 584...:" << xt::sum(land_mask) << std::endl;
+	std::cout << "edge_mask checksum: should be 584...:" << xt::sum(edge_mask) << std::endl;
+	std::cout << "water_mask checksum: should be 1759...:" << xt::sum(water_mask) << std::endl;
 
 
 	return 0;

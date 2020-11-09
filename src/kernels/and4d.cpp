@@ -1,5 +1,5 @@
 #include <iostream>
-extern "C" void add4d(double* A, double* B, int* A_stride, int* B_stride, int* A_offset, int* B_offset, double* out, int* out_shape, int* out_stride, int* out_offset, int* out_end_offset) {
+extern "C" void and4d(double* A, double* B, int* A_stride, int* B_stride, int* A_offset, int* B_offset, double* out, int* out_shape, int* out_stride, int* out_offset, int* out_end_offset) {
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem0 port = A latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem1 port = B latency = 64 num_read_outstanding = \
@@ -33,14 +33,19 @@ extern "C" void add4d(double* A, double* B, int* A_stride, int* B_stride, int* A
 					O_ind = i*out_stride[0] + j*out_stride[1] + k*out_stride[2] + l*out_stride[3];
 					A_val = A[A_ind];
 					B_val = B[B_ind];
-					out[O_ind] = A_val + B_val;
-
-					/*
+					if (A_val == B_val){
+						if (A_val == 1){
+							out[O_ind] = 1;
+						}
+					} else {
+						out[O_ind] = 0;
+					}
+/*
 					std::cout << "(" << i << ", " << j << ", " << k << ", " << l << ")" << std::endl;
 					std::cout << "\t\tO_ind: " << O_ind <<"\t\tO_val: " << out[O_ind] << std::endl;
 					std::cout << "\t\tA_ind: " << A_ind <<"\t\tA_val: " << A_val << std::endl;
 					std::cout << "\t\tB_ind: " << B_ind <<"\t\tB_val: " << B_val << std::endl; 
-					*/
+*/
 				}
 			}
 		}

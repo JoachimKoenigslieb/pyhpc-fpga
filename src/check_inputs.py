@@ -71,10 +71,21 @@ b_tri[:, :, 1:-1] = 1 + \
 b_tri[:, :, -1] = 1 + delta[:, :, -2] / (0.5 * dzw[-1]) \
         + dt_tke * c_eps / mxl[2:-2, 2:-2, -1] * sqrttke[2:-2, 2:-2, -1]
 
+b_tri_edge = 1 + delta / dzw[np.newaxis, np.newaxis, :] \
+        + dt_tke * c_eps / mxl[2:-2, 2:-2, :] * sqrttke[2:-2, 2:-2, :]
+
 c_tri[:, :, :-1] = -delta[:, :, :-1] / dzw[np.newaxis, np.newaxis, :-1]
+
+d_tri[...] = tke[2:-2, 2:-2, :, tau] + dt_tke * forc[2:-2, 2:-2, :] #dt_tke is one.
+d_tri[:, :, -1] += dt_tke * forc_tke_surface[2:-2, 2:-2] / (0.5 * dzw[-1])
+
+land_mask = (ks >= 0)[:, :, np.newaxis]
+edge_mask = land_mask & (np.arange(a_tri.shape[2])[np.newaxis, np.newaxis, :] == ks[:, :, np.newaxis])
+water_mask = land_mask & (np.arange(a_tri.shape[2])[np.newaxis, np.newaxis, :] >= ks[:, :, np.newaxis])
 
 print(f'sqrttke checksum: {sqrttke.sum()}')
 print(f'delta checksum: {delta.sum()}')
 print(f'a_tri checksum: {a_tri.sum()}')
 print(f'b_tri checksum: {b_tri.sum()}')
 print(f'c_tri checksum: {c_tri.sum()}')
+print(f'd_tri checksum: {d_tri.sum()}')
