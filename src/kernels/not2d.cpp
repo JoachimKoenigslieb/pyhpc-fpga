@@ -30,11 +30,11 @@ extern "C" void not2d(double* A, double* B, int* A_stride, int* B_stride, int* A
 			O_ind = i*out_stride[0] + j*out_stride[1];
 			A_val = A[A_ind];
 			if (A_val == 0){
-				out[O_ind] == 1;
+				out[O_ind] = 1;
 			} else
 			{
 				if (A_val == 1){
-					out[O_ind] == 1;
+					out[O_ind] = 0;
 				} else {
 					std::cout << "Something i expected to be a boolean is not! (This is crap, and implemented as doubles!)" << std::endl;
 					std::cout << "(" << i << ", " << j << ")" << std::endl;

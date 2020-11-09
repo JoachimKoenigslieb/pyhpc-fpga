@@ -303,6 +303,255 @@ void rebuild_stride(std::vector<int> &stride, std::vector<bool> input_singleton_
 	print_vec(stride);
 }
 
+
+void run_where_kernel(std::string kernel_name, 
+							std::vector<double *> &inputs,
+							std::vector<double *> &outputs,
+							std::vector<int> A_shape,
+							std::vector<int> B_shape,
+							std::vector<int> C_shape,
+							std::vector<int> output_shape,
+							std::vector<int> A_offset,
+							std::vector<int> B_offset,
+							std::vector<int> C_offset,
+							std::vector<int> output_offset,
+							std::vector<int> A_offset_end,
+							std::vector<int> B_offset_end,
+							std::vector<int> C_offset_end,
+							std::vector<int> output_offset_end,
+							std::vector<cl::Device> &devices,
+							cl::Context &context,
+							cl::Program::Binaries &bins,
+							cl::CommandQueue &q)
+{
+	{
+		cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
+		cl::Kernel kernel(program, kernel_name.data());
+		std::cout << "INFO: Kernel '" << kernel_name << "' has been created" << std::endl;
+
+		//num inputs outputs
+		int num_in = inputs.size();
+		int num_out = outputs.size();
+
+		//setup buffers:
+		std::vector<cl::Buffer> in_buffers(num_in);
+		std::vector<cl::Buffer> in_stride_buffers(num_in);
+		std::vector<cl::Buffer> in_offset_buffers(num_in);
+
+		cl::Buffer out_buffer;
+		cl::Buffer out_shape_buffer;
+		cl::Buffer out_stride_buffer;
+		cl::Buffer out_offset_buffer;
+		cl::Buffer out_offset_end_buffer;
+
+		std::cout << "INFO: Buffers initialized. Calculating sizes, shapes, strides etc...\n";
+
+		//calculate size variables
+		int len_A, len_B, len_C, len_out;
+		len_A = A_shape.size(),
+		len_B = B_shape.size(),
+		len_C = C_shape.size();
+		len_out = output_shape.size();
+		int max_in = std::max(len_C, std::max(len_A, len_B));
+		int dimensions = std::max(max_in, len_out);
+		pad_begin(A_shape, 1, dimensions); //add singleton dimensions
+		pad_begin(B_shape, 1, dimensions);
+		pad_begin(C_shape, 1, dimensions);
+		pad_begin(output_shape, 1, dimensions);
+		pad_begin(A_offset, 0, dimensions); //zero pad offsets if not defined
+		pad_begin(B_offset, 0, dimensions);
+		pad_begin(C_offset, 0, dimensions);
+		pad_begin(output_offset, 0, dimensions);
+		pad_begin(A_offset_end, 0, dimensions);
+		pad_begin(B_offset_end, 0, dimensions);
+		pad_begin(C_offset_end, 0, dimensions);
+		pad_begin(output_offset_end, 0, dimensions);
+
+		std::cout << "INFO: Basic size stuff calculated. Rebuiling for edge cases...\n";
+
+		//calculate view shapes:
+		std::vector<int> A_view_shape, B_view_shape, C_view_shape, output_view_shape; 
+		A_view_shape = sub_vecs(add_vecs(A_shape, A_offset_end), A_offset); //A_offset_end is a negative index indicating how many to take from the end. 
+		B_view_shape = sub_vecs(add_vecs(B_shape, B_offset_end), B_offset); //A_offset_end is a negative index indicating how many to take from the end. 
+		C_view_shape = sub_vecs(add_vecs(C_shape, C_offset_end), C_offset); //A_offset_end is a negative index indicating how many to take from the end. 
+		output_view_shape = sub_vecs(add_vecs(output_shape, output_offset_end), output_offset); //A_offset_end is a negative index indicating how many to take from the end. 
+
+		for (int i=0; i<dimensions; i++){
+			A_offset[i] -= output_offset[i];
+			B_offset[i] -= output_offset[i];
+			C_offset[i] -= output_offset[i];
+		}
+
+		std::cout << "INFO: view shapes found...\n";
+
+		std::vector<int> data_sizes_input = {cumprod(A_shape), cumprod(B_shape), cumprod(C_shape)};
+		int data_size_output = cumprod(output_shape);
+
+		std::vector<int> A_stride, B_stride, C_stride, output_stride;
+
+		//calculate strides and offsets
+		output_stride = get_stride_from_shape(output_shape);
+		A_stride = get_stride_from_shape(A_shape);
+		B_stride = get_stride_from_shape(B_shape);
+		C_stride = get_stride_from_shape(C_shape);
+
+		std::cout << "INFO: naive strides found...\n";
+
+		//Find possible singleton dimensions in inputs and output
+		std::vector<bool> output_view_singleton_dimensions = singleton_dimension_mask(output_view_shape);
+		std::vector<bool> A_view_singleton_dimensions = singleton_dimension_mask(A_view_shape);
+		std::vector<bool> B_view_singleton_dimensions = singleton_dimension_mask(B_view_shape);
+		std::vector<bool> C_view_singleton_dimensions = singleton_dimension_mask(C_view_shape);
+			
+		std::vector<bool> A_singleton_dimensions = singleton_dimension_mask(A_shape);
+		std::vector<bool> B_singleton_dimensions = singleton_dimension_mask(B_shape);
+		std::vector<bool> C_singleton_dimensions = singleton_dimension_mask(C_shape);
+		std::cout << "INFO: Singleton masks found...\n";
+
+		//Output is correctly strided by assumption: If you supply correct dimension of output i will loop trough every entry exactly once with strides calculated from you supplied shape.
+		//If inputs is not the same dimensions as output, we get in trouble with naive strides. We instead must rearrange the strides of inputs such that:
+		//1: Strides corresponding to singelton dimensions gets removed from "stride pool"
+		//2: stride pool is then arranged in-order skipping any singleton dimensions in the output. 
+
+		if (!mask_equality(A_singleton_dimensions, A_view_singleton_dimensions) || !mask_equality(B_singleton_dimensions, B_view_singleton_dimensions) || !mask_equality(C_singleton_dimensions, C_view_singleton_dimensions)){
+			rebuild_stride(A_stride, A_view_singleton_dimensions, output_view_singleton_dimensions);
+			rebuild_stride(B_stride, B_view_singleton_dimensions, output_view_singleton_dimensions);
+			rebuild_stride(C_stride, C_view_singleton_dimensions, output_view_singleton_dimensions);
+		}
+		//remove_leading_zeros(output_stride);
+
+		std::cout << "INFO: Rebuild strides taking singletons dimensions into account\n";
+
+		//create "looping over" vectors (seems stupid to it this way...)
+		std::vector<std::vector<int>> input_strides = {A_stride, B_stride, C_stride};
+		std::vector<std::vector<int>> input_offset = {A_offset, B_offset, C_offset};
+
+		//print debug info:
+		std::cout << "A_shapes: ";
+		print_vec(A_shape);
+		std::cout << "B_shapes: ";
+		print_vec(B_shape);
+		std::cout << "C_shapes: ";
+		print_vec(C_shape);
+		std::cout << "Out_shapes ";
+		print_vec(output_shape);
+
+		std::cout << "A_view_shapes: ";
+		print_vec(A_view_shape);
+		std::cout << "B_view_shapes: ";
+		print_vec(B_view_shape);		
+		std::cout << "C_view_shapes: ";
+		print_vec(C_view_shape);
+		std::cout << "output_view_shapes ";
+		print_vec(output_view_shape);
+
+		std::cout << "Singleton dimenions A:";
+		print_vec(A_view_singleton_dimensions);
+		std::cout << "Singleton dimenions B:";
+		print_vec(B_view_singleton_dimensions);
+		std::cout << "Singleton dimenions C:";
+		print_vec(B_view_singleton_dimensions);
+		std::cout << "Singleton dimenions output:";
+		print_vec(output_view_singleton_dimensions);
+
+		std::cout << "A_offset: ";
+		print_vec(A_offset);
+		std::cout << "B_offset: ";
+		print_vec(B_offset);
+		std::cout << "C_offset: ";
+		print_vec(C_offset);
+		std::cout << "out_offset: ";
+		print_vec(output_offset);
+
+
+		std::cout << "A_offset_end: ";
+		print_vec(A_offset_end);		
+		std::cout << "B_offset_end: ";
+		print_vec(B_offset_end);
+		std::cout << "C_offset_end: ";
+		print_vec(C_offset_end);		
+		std::cout << "out_offset_end: ";
+		print_vec(output_offset_end);
+
+		std::cout << "A strides: ";
+		print_vec(input_strides[0]);
+		std::cout << "B strides: ";
+		print_vec(input_strides[1]);
+		std::cout << "C strides: ";
+		print_vec(input_strides[2]);
+		std::cout << "O strides: ";
+		print_vec(output_stride);
+
+		std::cout << "Input size: " << data_sizes_input[0] << ", " << data_sizes_input[1] << ", " << data_sizes_input[2] << std::endl;
+		std::cout << "Output size: " << data_size_output << std::endl;
+
+		// write to buffers
+		for (int i = 0; i < num_in; i++){
+			in_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * data_sizes_input[i], inputs[i]);
+			in_stride_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_strides[i].data());
+			in_offset_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_offset[i].data());
+		}
+
+		out_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * data_size_output, outputs[0]);
+		out_shape_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_shape.data());
+		out_stride_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_stride.data());
+		out_offset_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_offset.data());
+		out_offset_end_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_offset_end.data());
+
+		std::cout << "INFO: Buffers has been created" << std::endl;
+
+		//set inputs.
+		for (int i = 0; i < num_in; i++){
+			kernel.setArg(i, in_buffers[i]);
+			q.enqueueMigrateMemObjects({in_buffers[i]}, 0);
+		}
+
+		std::cout << "INFO: inputs has been set." <<std::endl;
+
+		//set strides
+		for (int i = num_in; i < (2 * num_in); i++){
+			kernel.setArg(i, in_stride_buffers[i-num_in]);
+			q.enqueueMigrateMemObjects({in_stride_buffers[i-num_in]}, 0);
+		}
+
+		std::cout << "INFO: strides has been set." <<std::endl;
+
+		//set offsets
+		for (int i = (2 * num_in); i < (3 * num_in); i++){
+			kernel.setArg(i, in_offset_buffers[i-2*num_in]);
+			q.enqueueMigrateMemObjects({in_offset_buffers[i-2*num_in]}, 0);
+		}
+
+		std::cout << "INFO: offests has been set." <<std::endl;
+
+		//set outputs
+		kernel.setArg(3 * num_in, out_buffer);			  //arg6
+		kernel.setArg(3 * num_in + 1, out_shape_buffer);	  //arg7
+		kernel.setArg(3 * num_in + 2, out_stride_buffer); //arg8
+		kernel.setArg(3 * num_in + 3, out_offset_buffer);		  //arg9
+		kernel.setArg(3 * num_in + 4, out_offset_end_buffer);  //arg10
+
+		q.enqueueMigrateMemObjects({out_shape_buffer}, 0);
+		q.enqueueMigrateMemObjects({out_stride_buffer}, 0);
+		q.enqueueMigrateMemObjects({out_offset_buffer}, 0);
+		q.enqueueMigrateMemObjects({out_offset_end_buffer}, 0);
+
+		std::cout << "INFO: outputs has been set\n";
+
+		q.finish();
+
+		std::cout << "INFO: Arguments are set\n";
+
+		q.enqueueTask(kernel);
+		q.finish();
+		q.enqueueMigrateMemObjects({out_buffer}, CL_MIGRATE_MEM_OBJECT_HOST); // 1 : migrate from dev to host
+
+		std::cout << "INFO: Migrated to back to host" << std::endl;
+
+		q.finish();
+	}
+}
+
 void run_broadcast_kernel(std::string kernel_name,
 							std::vector<double *> &inputs,
 							std::vector<double *> &outputs,
@@ -406,8 +655,9 @@ void run_broadcast_kernel(std::string kernel_name,
 			rebuild_stride(A_stride, A_view_singleton_dimensions, output_view_singleton_dimensions);
 			rebuild_stride(B_stride, B_view_singleton_dimensions, output_view_singleton_dimensions);
 		}
+		//remove_leading_zeros(output_stride);
 
-		std::cout << "INFO: Rebuild strides taking singletons dimensions into account";
+		std::cout << "INFO: Rebuild strides taking singletons dimensions into account\n";
 
 		//create "looping over" vectors (seems stupid to it this way...)
 		std::vector<std::vector<int>> input_strides = {A_stride, B_stride};
@@ -628,9 +878,9 @@ int main(int argc, const char *argv[])
 	inputs = {tke.data(), zero.data()};
 	outputs = {sqrttke.data()};
 	run_broadcast_kernel("max4d", inputs, outputs, 
-		{X, Y, Z, 3}, {1}, {X, Y, Z},			//shapes
-		{0, 0, 0, 0}, {0}, {0, 0, 0,},			//start index
-		{0, 0, 0, -2}, {0}, {0, 0, 0}, 			//negativ end index
+		{X, Y, Z, 3}, {1}, {X, Y, Z, 1},			//shapes
+		{0, 0, 0, 0}, {0}, {0, 0, 0, 0},			//start index
+		{0, 0, 0, -2}, {0}, {0, 0, 0, 0}, 			//negativ end index
 		devices, context, bins, q);
 
 	inputs = {sqrttke.data()};
@@ -952,8 +1202,6 @@ int main(int argc, const char *argv[])
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
 		devices, context, bins, q);
 	
-
-	/*
 	//apply mask to tridiagonals
 	inputs = {a_tri.data(), water_mask.data()};
 	outputs = {a_tri.data()};
@@ -964,8 +1212,8 @@ int main(int argc, const char *argv[])
 		devices, context, bins, q);
 
 	xt::xarray<double> not_edge_mask = xt::zeros_like(edge_mask);
-
-	inputs = {not_edge_mask.data(), zero.data()};
+	
+	inputs = {edge_mask.data(), zero.data()}; //not op actually takes 1 operand. the zero in this case is noop and be anything!
 	outputs = {not_edge_mask.data()};
 	run_broadcast_kernel("not3d", inputs, outputs, 
 		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},					//shapes
@@ -976,26 +1224,32 @@ int main(int argc, const char *argv[])
 	inputs = {not_edge_mask.data(), a_tri.data()};
 	outputs = {a_tri.data()};
 	run_broadcast_kernel("mult3d", inputs, outputs, 
-		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},					//shapes
-		{0, 0, 0}, {0, 0, 0,}, {0, 0, 0},					//start index
-		{0, 0, 0}, {0, 0, 0,}, {0, 0, 0},						//negativ end index
+		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},			//shapes
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//start index
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
 		devices, context, bins, q);
-	*/
 	
-
+	inputs = {water_mask.data(), b_tri.data(), one.data()};
+	outputs = {b_tri.data()};
+	run_where_kernel("where3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},		//shapes
+		{0, 0, 0}, {0, 0, 0}, {0,}, {0, 0, 0},					//start index
+		{0, 0, 0}, {0, 0, 0}, {0,}, {0, 0, 0},					//negativ end index
+		devices, context, bins, q);
 
 	std::cout << "sqrttke checksum: should be 1679...: " << xt::sum(sqrttke) << std::endl;
 	std::cout << "ks checksum: should be 377...: " << xt::sum(ks) << std::endl;
 	std::cout << "delta checksum: should be 85...: " << xt::sum(delta) << std::endl;
-	std::cout << "a_tri checksum: should be 689.96...: " << xt::sum(a_tri) << std::endl;
-	std::cout << "b_tri checksum: should be -629...: " << xt::sum(b_tri) << std::endl;
+	std::cout << "diagonals checksum might change if mask is applied!!!" << std::endl;  
+	std::cout << "a_tri checksum: should be 689.96 (392.9)...: " << xt::sum(a_tri) << std::endl;
+	std::cout << "b_tri checksum: should be -629 (106.4)...: " << xt::sum(b_tri) << std::endl;
 	std::cout << "b_tri_edge checksum: should be 527...: " << xt::sum(b_tri_edge) << std::endl;
 	std::cout << "c_tri checksum: should be 835...: " << xt::sum(c_tri) << std::endl;
 	std::cout << "d_tri checksum: should be 115.9...: " << xt::sum(d_tri) << std::endl;
 	std::cout << "land_mask checksum: should be 584...:" << xt::sum(land_mask) << std::endl;
 	std::cout << "edge_mask checksum: should be 584...:" << xt::sum(edge_mask) << std::endl;
 	std::cout << "water_mask checksum: should be 1759...:" << xt::sum(water_mask) << std::endl;
-
+	std::cout << "not_edge_mask checksum: should be 2552...:" << xt::sum(not_edge_mask) << std::endl;
 
 	return 0;
 }
