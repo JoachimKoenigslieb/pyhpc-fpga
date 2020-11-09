@@ -1,4 +1,3 @@
-#include <iostream>
 extern "C" void not2d(double* A, double* B, int* A_stride, int* B_stride, int* A_offset, int* B_offset, double* out, int* out_shape, int* out_stride, int* out_offset, int* out_end_offset) {
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem0 port = A latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
@@ -35,12 +34,13 @@ extern "C" void not2d(double* A, double* B, int* A_stride, int* B_stride, int* A
 			{
 				if (A_val == 1){
 					out[O_ind] = 0;
-				} else {
+				} 
+				/*else {
 					std::cout << "Something i expected to be a boolean is not! (This is crap, and implemented as doubles!)" << std::endl;
 					std::cout << "(" << i << ", " << j << ")" << std::endl;
 					std::cout << "\t\tO_ind: " << O_ind <<"\t\tO_val: " << out[O_ind] << std::endl;
 					std::cout << "\t\tA_ind: " << A_ind <<"\t\tA_val: " << A_val << std::endl;
-				}
+				}*/
 			}
 		}
 	}

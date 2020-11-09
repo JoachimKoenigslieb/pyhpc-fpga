@@ -1,4 +1,3 @@
-#include <iostream>
 extern "C" void max3d(double* A, double* B, int* A_stride, int* B_stride, int* A_offset, int* B_offset, double* out, int* out_shape, int* out_stride, int* out_offset, int* out_end_offset) {
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem0 port = A latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
@@ -38,11 +37,11 @@ extern "C" void max3d(double* A, double* B, int* A_stride, int* B_stride, int* A
 				} else {
 					out[O_ind] = val_B;
 				}
-				std::cout << "(" << i << ", " << j << ", " << k << ")" << std::endl;
+/*				std::cout << "(" << i << ", " << j << ", " << k << ")" << std::endl;
 				std::cout << "\t\tO_ind: " << O_ind <<"\t\tO_val: " << out[O_ind] << std::endl;
 				std::cout << "\t\tA_ind: " << A_ind <<"\t\tA_val: " << val_A << std::endl;
 				std::cout << "\t\tB_ind: " << B_ind <<"\t\tB_val: " << val_B << std::endl; 
-			}
+*/			}
 		}
 	}
 }
