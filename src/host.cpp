@@ -145,59 +145,128 @@ unsigned long diff(const struct timeval *newTime, const struct timeval *oldTime)
 	return (newTime->tv_sec - oldTime->tv_sec) * 1000000 + (newTime->tv_usec - oldTime->tv_usec);
 }
 
-void run_kernel(std::string kernel_name, int kernel_size, std::vector<double *> &inputs, std::vector<double *> &outputs, std::vector<cl::Device> &devices, cl::Context &context, cl::Program::Binaries &bins, cl::CommandQueue &q)
+void run_gtsv(std::string kernel_name, int kernel_size, std::vector<double *> &inputs, std::vector<cl::Device> &devices, cl::Context &context, cl::Program::Binaries &bins, cl::CommandQueue &q)
 {
         // this is a helper function to execute a kernel.
         {
                 cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
                 cl::Kernel kernel(program, kernel_name.data());
 
-                std::cout << "INFO: Kernel '" << kernel_name << "' has been created" << std::endl;
+                 // DDR Settings
+		std::vector<cl_mem_ext_ptr_t> mext_io(4);
+		mext_io[0].flags = XCL_MEM_DDR_BANK0;
+		mext_io[1].flags = XCL_MEM_DDR_BANK0;
+		mext_io[2].flags = XCL_MEM_DDR_BANK0;
+		mext_io[3].flags = XCL_MEM_DDR_BANK0;
 
-                int num_in = inputs.size();
-                int num_out = outputs.size();
+		mext_io[0].obj = inputs[0];
+		mext_io[0].param = 0;
+		mext_io[1].obj = inputs[1];
+		mext_io[1].param = 0;
+		mext_io[2].obj = inputs[2];
+		mext_io[2].param = 0;
+		mext_io[3].obj = inputs[3];
+		mext_io[3].param = 0;
 
-                std::vector<cl::Buffer> in_buffers(num_in);
-                std::vector<cl::Buffer> out_buffers(num_out);
+		// Create device buffer and map dev buf to host buf
+		cl::Buffer matdiaglow_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
+										sizeof(double) * kernel_size, &mext_io[0]);
+		cl::Buffer matdiag_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
+									sizeof(double) * kernel_size, &mext_io[1]);
+		cl::Buffer matdiagup_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
+										sizeof(double) * kernel_size, &mext_io[2]);
+		cl::Buffer rhs_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
+								sizeof(double) * kernel_size, &mext_io[3]);
 
-                for (int i = 0; i < num_in; i++)
-                {
-                        in_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, sizeof(double) * kernel_size, inputs[i]);
-                }
+		// Data transfer from host buffer to device buffer
+		std::vector<std::vector<cl::Event> > kernel_evt(2);
+		kernel_evt[0].resize(1);
+		kernel_evt[1].resize(1);
 
-                for (int i = 0; i < num_out; i++)
-                {
-                        out_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, sizeof(double) * kernel_size, outputs[i]);
-                }
+		std::vector<cl::Memory> ob_in, ob_out;
+		ob_in.push_back(matdiaglow_buffer);
+		ob_in.push_back(matdiag_buffer);
+		ob_in.push_back(matdiagup_buffer);
+		ob_in.push_back(rhs_buffer);
 
-                std::cout << "INFO: Buffers has been created" << std::endl;
+		ob_out.push_back(rhs_buffer);
 
-                kernel.setArg(0, kernel_size); //we need to set arg0 to size!
+		q.enqueueMigrateMemObjects(ob_in, 0, nullptr, &kernel_evt[0][0]); // 0 : migrate from host to dev
+		q.finish();
+		std::cout << "INFO: Finish data transfer from host to device" << std::endl;
 
-                for (int i = 0; i < num_in; i++)
-                {
-                        kernel.setArg(i + 1, in_buffers[i]);
-                        q.enqueueMigrateMemObjects({in_buffers[i]}, 0);
-                }
 
-                for (int i = 0; i < num_out; i++)
-                {
-                        kernel.setArg(i + num_in + 1, out_buffers[i]);
-                }
+		// Setup kernel
+		kernel.setArg(0, kernel_size);
+		kernel.setArg(1, matdiaglow_buffer);
+		kernel.setArg(2, matdiag_buffer);
+		kernel.setArg(3, matdiagup_buffer);
+		kernel.setArg(4, rhs_buffer);
+		q.finish();
+		std::cout << "INFO: Finish kernel setup" << std::endl;
 
-                std::cout << "INFO: Arguments has been set" << std::endl;
+		q.enqueueTask(kernel, nullptr, nullptr);
+		q.finish();
+		q.enqueueMigrateMemObjects(ob_out, 1, nullptr, nullptr); // 1 : migrate from dev to host
+		q.finish();
 
-                std::cout << "INFO: Migrated to device" << std::endl;
 
-                q.enqueueTask(kernel);
+		}
+}
 
-                q.finish();
+void run_kernel(std::string kernel_name, int kernel_size, std::vector<double *> &inputs, std::vector<double *> &outputs, std::vector<cl::Device> &devices, cl::Context &context, cl::Program::Binaries &bins, cl::CommandQueue &q)
+	{
+		// this is a helper function to execute a kernel.
+		{
+		cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
+		cl::Kernel kernel(program, kernel_name.data());
 
-                q.enqueueMigrateMemObjects({out_buffers[0]}, CL_MIGRATE_MEM_OBJECT_HOST); // 1 : migrate from dev to host
+		std::cout << "INFO: Kernel '" << kernel_name << "' has been created" << std::endl;
 
-                std::cout << "INFO: Migrated to back to host" << std::endl;
+		int num_in = inputs.size();
+		int num_out = outputs.size();
 
-                q.finish();
+		std::vector<cl::Buffer> in_buffers(num_in);
+		std::vector<cl::Buffer> out_buffers(num_out);
+
+		for (int i = 0; i < num_in; i++)
+		{
+				in_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, sizeof(double) * kernel_size, inputs[i]);
+		}
+
+		for (int i = 0; i < num_out; i++)
+		{
+				out_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, sizeof(double) * kernel_size, outputs[i]);
+		}
+
+		std::cout << "INFO: Buffers has been created" << std::endl;
+
+		kernel.setArg(0, kernel_size); //we need to set arg0 to size!
+
+		for (int i = 0; i < num_in; i++)
+		{
+				kernel.setArg(i + 1, in_buffers[i]);
+				q.enqueueMigrateMemObjects({in_buffers[i]}, 0);
+		}
+
+		for (int i = 0; i < num_out; i++)
+		{
+				kernel.setArg(i + num_in + 1, out_buffers[i]);
+		}
+
+		std::cout << "INFO: Arguments has been set" << std::endl;
+
+		std::cout << "INFO: Migrated to device" << std::endl;
+
+		q.enqueueTask(kernel);
+
+		q.finish();
+
+		q.enqueueMigrateMemObjects({out_buffers[0]}, CL_MIGRATE_MEM_OBJECT_HOST); // 1 : migrate from dev to host
+
+		std::cout << "INFO: Migrated to back to host" << std::endl;
+
+		q.finish();
         }
 }
 
@@ -1192,7 +1261,6 @@ int main(int argc, const char *argv[])
 		{0}, {0, 0, 0}, {0, 0, 0},					//start index
 		{0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
 		devices, context, bins, q);
-	std::cout << water_mask << std::endl;
 
 	inputs = {land_mask.data(), water_mask.data()};
 	outputs = {water_mask.data()};
@@ -1237,15 +1305,47 @@ int main(int argc, const char *argv[])
 		{0, 0, 0}, {0, 0, 0}, {0,}, {0, 0, 0},					//negativ end index
 		devices, context, bins, q);
 
+	inputs = {edge_mask.data(), b_tri_edge.data(), b_tri.data()};
+	outputs = {b_tri.data()};
+	run_where_kernel("where3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4,Y-4,Z}, {X-4, Y-4, Z},		//shapes
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//start index
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {c_tri.data(), water_mask.data()};
+	outputs = {c_tri.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},			//shapes
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//start index
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
+		devices, context, bins, q);
+
+	inputs = {d_tri.data(), water_mask.data()};
+	outputs = {d_tri.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},			//shapes
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//start index
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
+		devices, context, bins, q);
+
+	a_tri[0] = 0; 	//on a tri-diagonal matrix, upper and lower diagonals have n-1 entries. We zero them like this to fit gtsv kernel convetion
+	c_tri[(X-4)*(Y-4)*Z - 1] = 0;
+
+	inputs = {a_tri.data(), b_tri.data(), c_tri.data(), d_tri.data()};
+
+	run_gtsv("gtsv", (X-4)*(Y-4)*Z, inputs, devices, context, bins, q); //this outputs ans into d_tri (xilinx solver kernel choice, not mine)
+
+
 	std::cout << "sqrttke checksum: should be 1679...: " << xt::sum(sqrttke) << std::endl;
 	std::cout << "ks checksum: should be 377...: " << xt::sum(ks) << std::endl;
 	std::cout << "delta checksum: should be 85...: " << xt::sum(delta) << std::endl;
 	std::cout << "diagonals checksum might change if mask is applied!!!" << std::endl;  
 	std::cout << "a_tri checksum: should be 689.96 (392.9)...: " << xt::sum(a_tri) << std::endl;
-	std::cout << "b_tri checksum: should be -629 (106.4)...: " << xt::sum(b_tri) << std::endl;
+	std::cout << "b_tri checksum: should be -629 (208.8)...: " << xt::sum(b_tri) << std::endl;
 	std::cout << "b_tri_edge checksum: should be 527...: " << xt::sum(b_tri_edge) << std::endl;
-	std::cout << "c_tri checksum: should be 835...: " << xt::sum(c_tri) << std::endl;
-	std::cout << "d_tri checksum: should be 115.9...: " << xt::sum(d_tri) << std::endl;
+	std::cout << "c_tri checksum: should be 835 (532.4)...: " << xt::sum(c_tri) << std::endl;
+	std::cout << "d_tri checksum: should be 115.9 (2157.7)...: " << xt::sum(d_tri) << std::endl;
 	std::cout << "land_mask checksum: should be 584...:" << xt::sum(land_mask) << std::endl;
 	std::cout << "edge_mask checksum: should be 584...:" << xt::sum(edge_mask) << std::endl;
 	std::cout << "water_mask checksum: should be 1759...:" << xt::sum(water_mask) << std::endl;

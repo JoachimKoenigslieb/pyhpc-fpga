@@ -10,9 +10,7 @@ extern "C" void vsqrt(int n, double* A, double* out) {
 #pragma HLS INTERFACE s_axilite port = n bundle = control
 #pragma HLS INTERFACE s_axilite port = A bundle = control
 #pragma HLS INTERFACE s_axilite port = out bundle = control
-
 #pragma HLS INTERFACE s_axilite port = return bundle = control
-
 	for (int i=0; i<n; i++){
 		out[i] = hls::sqrt(A[i]);
 	};

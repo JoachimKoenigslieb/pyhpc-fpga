@@ -1,5 +1,38 @@
 import math
+from scipy.linalg import lapack
 import numpy as np
+
+def where(mask, a, b):
+    return np.where(mask, a, b)
+
+
+def solve_implicit(ks, a, b, c, d, b_edge=None, d_edge=None):
+    land_mask = (ks >= 0)[:, :, np.newaxis]
+    edge_mask = land_mask & (np.arange(a.shape[2])[np.newaxis, np.newaxis, :] == ks[:, :, np.newaxis])
+    water_mask = land_mask & (np.arange(a.shape[2])[np.newaxis, np.newaxis, :] >= ks[:, :, np.newaxis])
+
+    #Water masks are created (in a shitty was! represented as doubles instead of bools. increadibly bad)
+
+    a_tri = water_mask * a * np.logical_not(edge_mask)
+    b_tri = where(water_mask, b, 1.)
+    if b_edge is not None:
+        b_tri = where(edge_mask, b_edge, b_tri)
+    c_tri = water_mask * c
+    d_tri = water_mask * d
+    if d_edge is not None:
+        d_tri = where(edge_mask, d_edge, d_tri)
+
+    return solve_tridiag(a_tri, b_tri, c_tri, d_tri), water_mask
+
+
+def solve_tridiag(a, b, c, d):
+    """
+    Solves a tridiagonal matrix system with diagonals a, b, c and RHS vector d.
+    """
+    assert a.shape == b.shape and a.shape == c.shape and a.shape == d.shape
+    a[..., 0] = c[..., -1] = 0  # remove couplings between slices
+    return lapack.dgtsv(a.flatten()[1:], b.flatten(), c.flatten()[:-1], d.flatten())[3].reshape(a.shape)
+
 
 u = np.load('./numpy_files/u.npy')
 v = np.load('./numpy_files/v.npy')
@@ -83,9 +116,18 @@ land_mask = (ks >= 0)[:, :, np.newaxis]
 edge_mask = land_mask & (np.arange(a_tri.shape[2])[np.newaxis, np.newaxis, :] == ks[:, :, np.newaxis])
 water_mask = land_mask & (np.arange(a_tri.shape[2])[np.newaxis, np.newaxis, :] >= ks[:, :, np.newaxis])
 
+a_tri = water_mask * a_tri * np.logical_not(edge_mask)
+b_tri = np.where(water_mask, b_tri, 1.)
+b_tri = np.where(edge_mask, b_tri_edge, b_tri)
+c_tri = water_mask * c_tri
+d_tri = water_mask * d_tri
+
+sol, water_mask = solve_implicit(ks, a_tri, b_tri, c_tri, d_tri, b_edge = b_tri_edge)
+
 print(f'sqrttke checksum: {sqrttke.sum()}')
 print(f'delta checksum: {delta.sum()}')
 print(f'a_tri checksum: {a_tri.sum()}')
 print(f'b_tri checksum: {b_tri.sum()}')
 print(f'c_tri checksum: {c_tri.sum()}')
 print(f'd_tri checksum: {d_tri.sum()}')
+print(f'sol checksum: {sol.sum()}')

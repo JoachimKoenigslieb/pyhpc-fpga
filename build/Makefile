@@ -7,6 +7,9 @@ LIBS := -L/opt/xilinx/xrt/lib/ -L/usr/local/lib -L/usr/lib -lOpenCL -lcnpy -lz -
 SOURCES := $(wildcard ../src/kernels/*.cpp)
 OBJECTS := $(patsubst %.cpp,%.xo,$(addprefix objects/,$(notdir $(SOURCES))))
 
+
+$(info $$var is [${OBJECTS}])
+
 kernels.xclbin: $(OBJECTS) 
 	v++ -t $(TARGET) --config design.cfg -l -g -o $@ $^
 
