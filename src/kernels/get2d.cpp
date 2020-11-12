@@ -35,8 +35,8 @@ extern "C" void get2d(double* A, double* B, int* A_stride, int* B_stride, int* A
 			} else {
 				out[O_ind] = 0;
 			}
-/*
-			std::cout << "(" << i << ", " << j << ", " << k << ", " << l << ")" << std::endl;
+
+/*			std::cout << "(" << i << ", " << j <<  ")" << std::endl;
 			std::cout << "\t\tO_ind: " << O_ind <<"\t\tO_val: " << out[O_ind] << std::endl;
 			std::cout << "\t\tA_ind: " << A_ind <<"\t\tA_val: " << A_val << std::endl;
 			std::cout << "\t\tB_ind: " << B_ind <<"\t\tB_val: " << B_val << std::endl; 

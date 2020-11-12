@@ -921,6 +921,9 @@ int main(int argc, const char *argv[])
 	xt::xarray<double> d_tri = xt::zeros<double>({X-4, Y-4, Z});
 	xt::xarray<double> delta = xt::zeros<double>({X-4, Y-4, Z});
 	xt::xarray<double> ks = xt::zeros<double>({X-4, Y-4});
+	xt::xarray<double> tke_surf_corr = xt::zeros<double>({X,Y});
+	xt::xarray<double> mask = xt::zeros<double>({X-4,Y-4});
+
 
 	int tau = 0;
 	double taup1 = 1.;
@@ -1329,13 +1332,55 @@ int main(int argc, const char *argv[])
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
 		devices, context, bins, q);
 
+/*	for (int i=0; i<3136; i++){
+		std::cout << d_tri[i] << ", ";
+	}
+*/	
+	inputs = {a_tri.data(), zero.data()}; //This is such a hack.. We need to write and assignment kernel also!
+	outputs = {a_tri.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
+		{0, 0, 0}, {0,}, {0, 0, 0},						//start index
+		{0, 0, -Z+1}, {0,}, {0, 0, -Z+1},						//negativ end index
+		devices, context, bins, q);
+
+	inputs = {c_tri.data(), zero.data()}; //This is such a hack.. We need to write and assignment kernel also!
+	outputs = {c_tri.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
+		{0, 0, Z-1}, {0,}, {0, 0, Z-1},						//start index
+		{0, 0, 0}, {0,}, {0, 0, 0},						//negativ end index
+		devices, context, bins, q);
+
 	a_tri[0] = 0; 	//on a tri-diagonal matrix, upper and lower diagonals have n-1 entries. We zero them like this to fit gtsv kernel convetion
 	c_tri[(X-4)*(Y-4)*Z - 1] = 0;
 
 	inputs = {a_tri.data(), b_tri.data(), c_tri.data(), d_tri.data()};
-
 	run_gtsv("gtsv", (X-4)*(Y-4)*Z, inputs, devices, context, bins, q); //this outputs ans into d_tri (xilinx solver kernel choice, not mine)
 
+	inputs = {water_mask.data(), d_tri.data(), tke.data()};
+	outputs = {tke.data()};
+	run_where_kernel("where4d", inputs, outputs,
+	{X-4, Y-4, Z, 1}, {X-4, Y-4, Z, 1}, {X, Y, Z, 3}, {X, Y, Z, 3},
+	{0, 0, 0, 0}, {0, 0, 0, 0}, {2, 2, 0, 1}, {2, 2, 0, 1},
+	{0, 0, 0, 0}, {0, 0, 0, 0}, {-2, -2, 0, -1}, {-2, -2, 0, -1},
+	devices, context, bins, q);
+
+	inputs = {zero.data(), tke.data()}; //This is such a hack.. We need to write an assignment kernel also!
+	outputs = {mask.data()};
+	run_broadcast_kernel("get4d", inputs, outputs, 
+		{1}, {X, Y, Z, 3}, {1, 1, X-4, Y-4,},			//shapes
+		{0}, {2, 2, Z-1, 1}, {0, 0, 0, 0,},						//start index
+		{0}, {-2, -2, 0, -1}, {0, 0, 0, 0, },						//negativ end index
+		devices, context, bins, q);
+
+/*	inputs = {mask.data(), d_tri.data(), tke.data()};
+	outputs = {tke.data()};
+		run_where_kernel("where4d", inputs, outputs,
+		{X-4, Y-4, Z, 1}, {X-4, Y-4, Z, 1}, {X, Y, Z, 3}, {X, Y, Z, 3},
+		{0, 0, 0, 0}, {0, 0, 0, 0}, {2, 2, 0, 1}, {2, 2, 0, 1},
+		{0, 0, 0, 0}, {0, 0, 0, 0}, {-2, -2, 0, -1}, {-2, -2, 0, -1},
+		devices, context, bins, q);*/
 
 	std::cout << "sqrttke checksum: should be 1679...: " << xt::sum(sqrttke) << std::endl;
 	std::cout << "ks checksum: should be 377...: " << xt::sum(ks) << std::endl;
@@ -1345,11 +1390,40 @@ int main(int argc, const char *argv[])
 	std::cout << "b_tri checksum: should be -629 (208.8)...: " << xt::sum(b_tri) << std::endl;
 	std::cout << "b_tri_edge checksum: should be 527...: " << xt::sum(b_tri_edge) << std::endl;
 	std::cout << "c_tri checksum: should be 835 (532.4)...: " << xt::sum(c_tri) << std::endl;
-	std::cout << "d_tri checksum: should be 115.9 (2157.7)...: " << xt::sum(d_tri) << std::endl;
+	std::cout << "d_tri checksum: should be 115.9 (-2157.7)...: " << xt::sum(d_tri) << std::endl;
 	std::cout << "land_mask checksum: should be 584...:" << xt::sum(land_mask) << std::endl;
 	std::cout << "edge_mask checksum: should be 584...:" << xt::sum(edge_mask) << std::endl;
 	std::cout << "water_mask checksum: should be 1759...:" << xt::sum(water_mask) << std::endl;
 	std::cout << "not_edge_mask checksum: should be 2552...:" << xt::sum(not_edge_mask) << std::endl;
+	std::cout << "gtsv doesnt work atm. we hijack checksums to follow wrong solution to implement rest of the code while debug...\n";
+	std::cout << "tke checksum: should be -2052.5 (-926.5)...: " << xt::sum(tke) << std::endl;
+	std::cout << "mask:.. (263) "<< xt::sum(mask) << std::endl;
+
+/*	for (int i=0; i<3136; i++){
+		std::cout << a_tri[i] << ", ";
+	}
+
+	std::cout << "\n";
+
+	for (int i=0; i<3136; i++){
+		std::cout << b_tri[i] << ", ";
+	}
+
+	std::cout << "\n";
+
+	for (int i=0; i<3136; i++){
+		std::cout << c_tri[i] << ", ";
+	}
+
+	std::cout << "\n";
+
+	for (int i=0; i<3136; i++){
+		std::cout << d_tri[i] << ", ";
+	}
+
+	std::cout << "\n";
+
+*/
 
 	return 0;
 }
