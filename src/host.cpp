@@ -687,11 +687,6 @@ void run_broadcast_kernel(std::string kernel_name,
 		B_view_shape = sub_vecs(add_vecs(B_shape, B_offset_end), B_offset); //A_offset_end is a negative index indicating how many to take from the end. 
 		output_view_shape = sub_vecs(add_vecs(output_shape, output_offset_end), output_offset); //A_offset_end is a negative index indicating how many to take from the end. 
 
-		for (int i=0; i<dimensions; i++){
-			A_offset[i] -= output_offset[i];
-			B_offset[i] -= output_offset[i];
-		}
-
 		std::cout << "INFO: view shapes found...\n";
 
 		std::vector<int> data_sizes_input = {cumprod(A_shape), cumprod(B_shape)};
@@ -714,6 +709,25 @@ void run_broadcast_kernel(std::string kernel_name,
 		std::vector<bool> A_singleton_dimensions = singleton_dimension_mask(A_shape);
 		std::vector<bool> B_singleton_dimensions = singleton_dimension_mask(B_shape);
 		std::cout << "INFO: Singleton masks found...\n";
+
+		//We might need to have an offset if we have singleton dimensions not being the first. ie A[:,:] = B[:,:,2] we need and offset of whatever stride is in the leading dimension of B times 2
+		int A_lin_offset = 0;
+		int B_lin_offset = 0;
+		
+		for (int i=0; i<dimensions; i++){
+			if (output_view_singleton_dimensions[i] == 1) // meaning, we should not loop over this in the output!
+			{
+				A_lin_offset += A_stride[i] * A_offset[i];
+				B_lin_offset += B_stride[i] * B_offset[i];
+			}
+		}
+
+		// Then, modify the offsets such that we are relative to output offsets
+		for (int i=0; i<dimensions; i++){
+			A_offset[i] -= output_offset[i];
+			B_offset[i] -= output_offset[i];
+		}
+
 
 		//Output is correctly strided by assumption: If you supply correct dimension of output i will loop trough every entry exactly once with strides calculated from you supplied shape.
 		//If inputs is not the same dimensions as output, we get in trouble with naive strides. We instead must rearrange the strides of inputs such that:
@@ -761,6 +775,8 @@ void run_broadcast_kernel(std::string kernel_name,
 		std::cout << "out_offset: ";
 		print_vec(output_offset);
 
+		std::cout << "A_lin_offset: " << A_lin_offset << std::endl;
+		std::cout << "B_lin_offset: " << B_lin_offset << std::endl;
 
 		std::cout << "A_offset_end: ";
 		print_vec(A_offset_end);		
@@ -816,14 +832,19 @@ void run_broadcast_kernel(std::string kernel_name,
 			q.enqueueMigrateMemObjects({in_offset_buffers[i-2*num_in]}, 0);
 		}
 
-		std::cout << "INFO: offests has been set." <<std::endl;
+		std::cout << "INFO: offsets has been set." <<std::endl;
+
+		kernel.setArg(6, A_lin_offset);
+		kernel.setArg(7, B_lin_offset);
+		std::cout << "INFO: linear offsets has been set." <<std::endl;
 
 		//set outputs
-		kernel.setArg(3 * num_in, out_buffer);			  //arg6
-		kernel.setArg(3 * num_in + 1, out_shape_buffer);	  //arg7
-		kernel.setArg(3 * num_in + 2, out_stride_buffer); //arg8
-		kernel.setArg(3 * num_in + 3, out_offset_buffer);		  //arg9
-		kernel.setArg(3 * num_in + 4, out_offset_end_buffer);  //arg10
+		kernel.setArg(4 * num_in, out_buffer);			  //arg6
+		kernel.setArg(4 * num_in + 1, out_shape_buffer);	  //arg7
+		kernel.setArg(4 * num_in + 2, out_stride_buffer); //arg8
+		kernel.setArg(4 * num_in + 3, out_offset_buffer);		  //arg9
+		kernel.setArg(4 * num_in + 4, out_offset_end_buffer);  //arg10
+
 
 		q.enqueueMigrateMemObjects({out_shape_buffer}, 0);
 		q.enqueueMigrateMemObjects({out_stride_buffer}, 0);
@@ -949,7 +970,7 @@ int main(int argc, const char *argv[])
 	//sqrttke
 	inputs = {tke.data(), zero.data()};
 	outputs = {sqrttke.data()};
-	run_broadcast_kernel("max4d", inputs, outputs, 
+	run_broadcast_kernel("max3d", inputs, outputs, 
 		{X, Y, Z, 3}, {1}, {X, Y, Z, 1},			//shapes
 		{0, 0, 0, 0}, {0}, {0, 0, 0, 0},			//start index
 		{0, 0, 0, -2}, {0}, {0, 0, 0, 0}, 			//negativ end index

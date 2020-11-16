@@ -1,4 +1,4 @@
-extern "C" void add4d(double* A, double* B, int* A_stride, int* B_stride, int* A_offset, int* B_offset, double* out, int* out_shape, int* out_stride, int* out_offset, int* out_end_offset) {
+extern "C" void add4d(double* A, double* B, int* A_stride, int* B_stride, int* A_offset, int* B_offset, int A_lin_offset, int B_lin_offset, double* out, int* out_shape, int* out_stride, int* out_offset, int* out_end_offset) {
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem0 port = A latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem1 port = B latency = 64 num_read_outstanding = \
@@ -9,10 +9,12 @@ extern "C" void add4d(double* A, double* B, int* A_stride, int* B_stride, int* A
 #pragma HLS INTERFACE s_axilite port = A bundle = control
 #pragma HLS INTERFACE s_axilite port = A_stride bundle = control
 #pragma HLS INTERFACE s_axilite port = A_offset bundle = control
+#pragma HLS INTERFACE s_axilite port = A_lin_offset bundle = control
 
 #pragma HLS INTERFACE s_axilite port = B bundle = control
 #pragma HLS INTERFACE s_axilite port = B_stride bundle = control
 #pragma HLS INTERFACE s_axilite port = B_offset bundle = control
+#pragma HLS INTERFACE s_axilite port = B_lin_offset bundle = control
 
 #pragma HLS INTERFACE s_axilite port = out bundle = control
 #pragma HLS INTERFACE s_axilite port = out_stride bundle = control
@@ -20,6 +22,7 @@ extern "C" void add4d(double* A, double* B, int* A_stride, int* B_stride, int* A
 #pragma HLS INTERFACE s_axilite port = out_end_offset bundle = control
 
 #pragma HLS INTERFACE s_axilite port = return bundle = control
+
 	int O_ind, A_ind, B_ind;
 	double A_val, B_val;
 
