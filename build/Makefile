@@ -5,15 +5,15 @@ INCLUDES := -I/tools/Xilinx/Vivado/2020.1/include/ -I../src/xf_solver/L2/include
 LIBS := -L/opt/xilinx/xrt/lib/ -L/usr/local/lib -L/usr/lib -lOpenCL -lcnpy -lz -lpthread -lrt -lstdc++ -std=c++14 -w -O0 -g
 
 SOURCES := $(wildcard ../src/kernels/*.cpp)
-OBJECTS := $(patsubst %.cpp,%.xo,$(addprefix objects/,$(notdir $(SOURCES))))
+OBJECTS := $(patsubst %.cpp,%.xo,$(addprefix $(TARGET)_objects/,$(notdir $(SOURCES))))
 
 
 $(info $$var is [${OBJECTS}])
 
-kernels.xclbin: $(OBJECTS) 
+$(TARGET)_kernels.xclbin: $(OBJECTS) 
 	v++ -t $(TARGET) --config design.cfg -l -g -o $@ $^
 
-$(OBJ_DIR)/%.xo: $(KERNEL_DIR)/%.cpp
+$(TARGET)_objects/%.xo: $(KERNEL_DIR)/%.cpp
 	v++ -t $(TARGET) --config design.cfg -c -k $(basename $(notdir $<)) $(INCLUDES) -o $@ $<
 
 host: ../src/host.cpp

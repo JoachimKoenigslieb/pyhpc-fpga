@@ -208,11 +208,92 @@ with open('./numpy_files/sol.pickle', 'rb') as file:
     sol = pickle.load(file)
     sol = sol.reshape((28, 28, 4))
 
-tmp_tke = np.where(water_mask, sol, tke[2:-2, 2:-2, :, taup1])
-tke[2:-2, 2:-2, :, taup1] = tmp_tke
+# tmp_tke = np.where(water_mask, sol, tke[2:-2, 2:-2, :, taup1])
+tke[2:-2, 2:-2, :, taup1] = np.where(water_mask, sol, tke[2:-2, 2:-2, :, taup1])
+
 
 mask = tke[2:-2, 2:-2, -1, taup1] < 0.0
+tke_surf_corr[2:-2, 2:-2] = where(
+    mask,
+    -tke[2:-2, 2:-2, -1, taup1] * 0.5 * dzw[-1] / dt_tke,
+    0.
+)
+tke[2:-2, 2:-2, -1, taup1] = np.maximum(0., tke[2:-2, 2:-2, -1, taup1])
 
+flux_east[:-1, :, :] = K_h_tke * (tke[1:, :, :, tau] - tke[:-1, :, :, tau]) \
+    / (cost[np.newaxis, :, np.newaxis] * dxu[:-1, np.newaxis, np.newaxis]) * maskU[:-1, :, :]
+flux_east[-1, :, :] = 0
+
+flux_north[:, :-1, :] = K_h_tke * (tke[:, 1:, :, tau] - tke[:, :-1, :, tau]) \
+    / dyu[np.newaxis, :-1, np.newaxis] * maskV[:, :-1, :] * cosu[np.newaxis, :-1, np.newaxis]
+flux_north[:, -1, :] = 0.
+
+    
+tke[2:-2, 2:-2, :, taup1] += dt_tke * maskW[2:-2, 2:-2, :] * \
+    ((flux_east[2:-2, 2:-2, :] - flux_east[1:-3, 2:-2, :])
+        / (cost[np.newaxis, 2:-2, np.newaxis] * dxt[2:-2, np.newaxis, np.newaxis])
+        + (flux_north[2:-2, 2:-2, :] - flux_north[2:-2, 1:-3, :])
+        / (cost[np.newaxis, 2:-2, np.newaxis] * dyt[np.newaxis, 2:-2, np.newaxis]))
+
+def pad_z_edges(arr):
+    arr_shape = list(arr.shape)
+    arr_shape[2] += 2
+    out = np.zeros(arr_shape, arr.dtype)
+    out[:, :, 1:-1] = arr
+    return out
+
+def _calc_cr(rjp, rj, rjm, vel):
+    """
+    Calculates cr value used in superbee advection scheme
+    """
+    eps = 1e-20  # prevent division by 0
+    return where(vel > 0., rjm, rjp) / where(np.abs(rj) < eps, eps, rj)
+
+def limiter(cr):
+    return np.maximum(0., np.maximum(np.minimum(1., 2 * cr), np.minimum(2., cr)))
+
+def _adv_superbee(vel, var, mask, dx, axis, cost, cosu, dt_tracer):
+    velfac = 1
+    if axis == 0:
+        sm1, s, sp1, sp2 = ((slice(1 + n, -2 + n or None), slice(2, -2), slice(None)) for n in range(-1, 3))
+        dx = cost[np.newaxis, 2:-2, np.newaxis] * \
+            dx[1:-2, np.newaxis, np.newaxis]
+    elif axis == 1:
+        sm1, s, sp1, sp2 = ((slice(2, -2), slice(1 + n, -2 + n or None), slice(None))
+                            for n in range(-1, 3))
+        dx = (cost * dx)[np.newaxis, 1:-2, np.newaxis]
+        velfac = cosu[np.newaxis, 1:-2, np.newaxis]
+    elif axis == 2:
+        vel, var, mask = (pad_z_edges(a) for a in (vel, var, mask))
+        sm1, s, sp1, sp2 = ((slice(2, -2), slice(2, -2), slice(1 + n, -2 + n or None))
+                            for n in range(-1, 3))
+        dx = dx[np.newaxis, np.newaxis, :-1]
+    else:
+        raise ValueError('axis must be 0, 1, or 2')
+        
+    print(f'axis is: {axis} dx shape is {dx.shape}')
+    uCFL = np.abs(velfac * vel[s] * dt_tracer / dx)
+    print(f'axis is: {axis} uCFl shape is {uCFL.shape} s is {s} uCFL sum: {uCFL.sum()}')
+    rjp = (var[sp2] - var[sp1]) * mask[sp1]
+    rj = (var[sp1] - var[s]) * mask[s]
+    rjm = (var[s] - var[sm1]) * mask[sm1]
+    cr = limiter(_calc_cr(rjp, rj, rjm, vel[s]))
+    return velfac * vel[s] * (var[sp1] + var[s]) * 0.5 - np.abs(velfac * vel[s]) * ((1. - cr) + uCFL * cr) * rj * 0.5
+
+maskUtr = np.zeros_like(maskW)
+maskUtr[:-1, :, :] = maskW[1:, :, :] * maskW[:-1, :, :]
+flux_east[...] = 0.
+flux_east[1:-2, 2:-2, :] = _adv_superbee(u[..., tau], tke[:, :, :, tau], maskUtr, dxt, 0, cost, cosu, dt_tracer)
+
+maskVtr = np.zeros_like(maskW)
+maskVtr[:, :-1, :] = maskW[:, 1:, :] * maskW[:, :-1, :]
+flux_north[...] = 0.
+flux_north[2:-2, 1:-2, :] = _adv_superbee(v[..., tau], tke[:, :, :, tau], maskVtr, dyt, 1, cost, cosu, dt_tracer)
+
+maskWtr = np.zeros_like(maskW)
+maskWtr[:, :, :-1] = maskW[:, :, 1:] * maskW[:, :, :-1]
+flux_top[...] = 0.
+flux_top[2:-2, 2:-2, :-1] = _adv_superbee(w[..., tau], tke[:, :, :, tau], maskWtr, dzw, 2, cost, cosu, dt_tracer)
 
 print(f'sqrttke checksum: {sqrttke.sum()}')
 print(f'delta checksum: {delta.sum()}')
@@ -222,3 +303,9 @@ print(f'c_tri checksum: {c_tri.sum()}')
 print(f'd_tri checksum: {d_tri.sum()}')
 print(f'sol checksum: {sol.sum()}')
 print(f'tke checksum: {tke.sum()}')
+print(f'tke_ surf corr checksum: {tke_surf_corr.sum()}')
+print(f'flux_east checksum: {flux_east.sum()}')
+print(f'flux_north checksum: {flux_north.sum()}')
+
+
+(cost * dyt)[np.newaxis, 1:-2, np.newaxis]

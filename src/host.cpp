@@ -18,6 +18,20 @@
 
 using namespace xt::placeholders; //enables xt::range(1, _) syntax. eqiv. to [1:] syntax in numpy 
 
+
+// Memory alignment
+template <typename T>
+T *aligned_alloc(std::size_t num)
+{
+	void *ptr = nullptr;
+	if (posix_memalign(&ptr, 4096, num * sizeof(T)))
+	{
+		throw std::bad_alloc();
+	}
+	return reinterpret_cast<T *>(ptr);
+}
+
+
 int cumprod(std::vector<int> v){
 	int i = 1;
 	for (int j=0; j<v.size(); j++){
@@ -47,67 +61,11 @@ void pad_begin(std::vector<int> &vec, int val, int to_len){
 		vec.insert(vec.begin(), val);
 	}
 	if (vec.size() > to_len){
-		for (int i=0; i<(vec.size() - to_len); i++){
+		for (int i=0; i<(vec.size() - to_len) +1; i++){
 			vec.pop_back();
 		}
 	}
 }
-
-void push_right(std::vector<int> &vec, int num){
-	int vec_size = vec.size();
-	vec.erase(vec.end() - num, vec.end());
-	pad_begin(vec, 0, vec_size);
-}
-
-int count_trailing_ones(std::vector<int> &vec){
-	int ones=0;
-	int vec_size = vec.size();
-	for (int i=vec_size-1; i>-1; i--){
-		if (vec[i] == 1){
-			ones++;
-		} else {
-			break;
-		}
-	}
-	return ones;
-}
-
-
-void calculate_shapes_for_broadcasting(std::vector<int> &shape_A, std::vector<int> &shape_B, std::vector<int> requested_shape_output)
-{
-	int len_O = requested_shape_output.size();
-	int len_A = shape_A.size();
-	int len_B = shape_B.size();
-
-	std::cout << "A has len " << len_A << " B has len: " << len_B << " requested output has len " << len_O << std::endl;
-
-	pad_begin(shape_A, 1, len_O);
-	pad_begin(shape_B, 1, len_O);
-
-	// loop trough and check if we can broadcast
-	int dim_A, dim_B, dim_O, naive_output;
-
-	for (int i = 0; i < len_O; i++)
-	{
-		dim_A = shape_A[i];
-		dim_B = shape_B[i];
-		dim_O = requested_shape_output[i];
-
-		if (!(dim_A == dim_B || dim_A == 1 || dim_B == 1))
-		{
-			std::cout << "!!!\n!!!\nERROR: You tried to broadcast shapes that does not broadcast\n!!!\n!!!\n!!!\n"; //do proper error handling
-		}
-
-		naive_output = std::max(dim_A, dim_B); //this is max of inputs shapes. should be either 1, or equal to requested shape!
-		std::cout << "broadcasting the inputs gives: " << naive_output << ". We are requesting: " << dim_O << std::endl;
-
-		if (!(dim_O == naive_output || naive_output == 1))
-		{
-			std::cout << "!!!\n!!!\nERROR: You tried to broadcast into a shape that can not be broadcast from the inputs!\n!!!\n!!!\n!!!\n";
-		}
-	}
-}
-
 
 std::vector<int> sub_vecs(std::vector<int> A, std::vector<int> B){
 	int dims = A.size();
@@ -233,6 +191,7 @@ std::vector<int> rebuild_stride(std::vector<int> stride, std::vector<int> view_s
 
 	new_stride = zero_on_squeeze(view_shape, stride);
 	pad_begin(new_stride, 0, out_dim);
+
 	return new_stride;
 }
 
@@ -240,7 +199,7 @@ std::vector<int> rebuild_offset(std::vector<int> offset, std::vector<int> view_s
 	int dims = view_shape.size();
 	std::vector<int> filtered_offset;
 
-	filtered_offset = filter_on_squeeze(view_shape, offset);
+	filtered_offset = zero_on_squeeze(view_shape, offset);
 
 	pad_begin(filtered_offset, 0, out_dim);
 
@@ -248,55 +207,47 @@ std::vector<int> rebuild_offset(std::vector<int> offset, std::vector<int> view_s
 	return new_offset;
 }
 
-void negotiate_strides(	std::vector<int> A_shape, std::vector<int> B_shape, std::vector<int> &out_shape, 
-					std::vector<int> &A_offset, std::vector<int> &B_offset, std::vector<int> &out_offset,
-					std::vector<int> A_end_offset, std::vector<int> B_end_offset, std::vector<int> &out_end_offset,
-					std::vector<int> &A_stride_res, std::vector<int> &B_stride_res, std::vector<int> &out_stride_res,
-					int &A_lin_offset_res, int &B_lin_offset_res, int &out_lin_offset_res, int &out_dim,
-					int &A_data_size, int &B_data_size, int &out_data_size
-					){
-						
+
+void negotiate_strides(	std::vector<int> A_shape, std::vector<int> &out_shape, 
+					std::vector<int> &A_offset, std::vector<int> &out_offset,
+					std::vector<int> A_end_offset, std::vector<int> &out_end_offset,
+					std::vector<int> &A_stride_res, std::vector<int> &out_stride_res,
+					int &A_lin_offset_res, int &out_lin_offset_res, int &out_dim,
+					int &A_data_size, int &out_data_size
+					){						
 	std::vector<int> A_view_shape, B_view_shape, out_view_shape;
 	A_view_shape = sub_vecs(add_vecs(A_shape, A_end_offset), A_offset); //A_end_offset is a negative index indicating how many to take from the end. 
-	B_view_shape = sub_vecs(add_vecs(B_shape, B_end_offset), B_offset); //A_end_offset is a negative index indicating how many to take from the end. 
 	out_view_shape = sub_vecs(add_vecs(out_shape, out_end_offset), out_offset);
 
 	//negotiate_shapes(out_view_shape, A_view_shape, B_view_shape); //This checks if we can broadcast at all
 
 	std::vector<int> A_stride, B_stride, out_stride;
 	A_stride = stride_from_shape(A_shape);
-	B_stride = stride_from_shape(B_shape);
 	out_stride = stride_from_shape(out_shape);
 
 	int A_lin_offset, B_lin_offset, out_lin_offset;
 	A_lin_offset = collect_linear_offset(A_view_shape, A_stride, A_offset);
-	B_lin_offset = collect_linear_offset(B_view_shape, B_stride, B_offset);
 	out_lin_offset = collect_linear_offset(out_view_shape, out_stride, out_offset);
 
 	out_dim = squeeze(out_view_shape).size(); //should be squeezed!
 
 	A_stride = rebuild_stride(A_stride, A_view_shape, out_dim);
-	B_stride = rebuild_stride(B_stride, B_view_shape, out_dim);
 	out_stride = rebuild_stride(out_stride, out_view_shape, out_dim);
 
 	A_offset = rebuild_offset(A_offset, A_view_shape, out_offset, out_dim);
-	B_offset = rebuild_offset(B_offset, B_view_shape, out_offset, out_dim);
 
 	out_offset = filter_on_squeeze(out_view_shape, out_offset);
 	out_end_offset = filter_on_squeeze(out_view_shape, out_end_offset);
 
 	A_data_size = cumprod(A_shape);
-	B_data_size = cumprod(B_shape);
 	out_data_size = cumprod(out_shape);
 
 	out_shape = filter_on_squeeze(out_view_shape, out_shape); 
 
 	A_stride_res = A_stride;
-	B_stride_res = B_stride;
 	out_stride_res = out_stride;
 
 	A_lin_offset_res = A_lin_offset;
-	B_lin_offset_res = B_lin_offset;
 	out_lin_offset_res = out_lin_offset;
 }
 
@@ -339,9 +290,17 @@ void run_broadcast_kernel(std::string kernel_name,
 		cl::Buffer out_offset_end_buffer;
 
 		std::vector<int> A_stride, B_stride, output_stride;
-		int A_lin_offset, B_lin_offset, out_lin_offset;
-		int data_size_output, B_data_size, A_data_size;
-		negotiate_strides(A_shape, B_shape, output_shape, A_offset, B_offset, output_offset, A_offset_end, B_offset_end, output_offset_end, A_stride, B_stride, output_stride, A_lin_offset, B_lin_offset, out_lin_offset, dimensions, A_data_size, B_data_size, data_size_output);
+		int A_lin_offset, B_lin_offset, output_lin_offset;
+		int output_data_size, B_data_size, A_data_size;
+	
+		std::vector<int> output_offset_B_copy(output_offset);
+		std::vector<int> output_offset_end_B_copy(output_offset_end);
+		std::vector<int> output_stride_B_copy(output_stride);
+		std::vector<int> output_shape_B_copy(output_shape);
+		int output_lin_offset_B_copy, output_data_size_B_copy;
+
+		negotiate_strides(A_shape, output_shape, A_offset, output_offset, A_offset_end, output_offset_end, A_stride, output_stride, A_lin_offset, output_lin_offset, dimensions, A_data_size, output_data_size);
+		negotiate_strides(B_shape, output_shape_B_copy, B_offset, output_offset_B_copy, B_offset_end, output_offset_end_B_copy, B_stride, output_stride_B_copy, B_lin_offset, output_lin_offset_B_copy, dimensions, B_data_size, output_data_size_B_copy);
 
 		//create "looping over" vectors (seems stupid to it this way...)
 		std::vector<std::vector<int>> input_strides = {A_stride, B_stride};
@@ -358,21 +317,6 @@ void run_broadcast_kernel(std::string kernel_name,
 		std::cout << "Out_shapes ";
 		print_vec(output_shape);
 
-/*		std::cout << "A_view_shapes: ";
-		print_vec(A_view_shape);
-		std::cout << "B_view_shapes: ";
-		print_vec(B_view_shape);
-		std::cout << "output_view_shapes ";
-		print_vec(output_view_shape);
-
-		std::cout << "Singleton dimenions A:";
-		print_vec(A_view_singleton_dimensions);
-		std::cout << "Singleton dimenions B:";
-		print_vec(B_view_singleton_dimensions);
-		std::cout << "Singleton dimenions output:";
-		print_vec(output_view_singleton_dimensions);
-*/
-
 		std::cout << "A_offset: ";
 		print_vec(A_offset);
 		std::cout << "B_offset: ";
@@ -382,7 +326,7 @@ void run_broadcast_kernel(std::string kernel_name,
 
 		std::cout << "A_lin_offset: " << A_lin_offset << std::endl;
 		std::cout << "B_lin_offset: " << B_lin_offset << std::endl;
-		std::cout << "out_lin_offset: " << out_lin_offset << std::endl;
+		std::cout << "output_lin_offset: " << output_lin_offset << std::endl;
 
 		std::cout << "A_offset_end: ";
 		print_vec(A_offset_end);		
@@ -399,18 +343,18 @@ void run_broadcast_kernel(std::string kernel_name,
 		print_vec(output_stride);
 
 		std::cout << "Input size: " << data_sizes_input[0] << ", " << data_sizes_input[1] << std::endl;
-		std::cout << "Output size: " << data_size_output << std::endl;
+		std::cout << "Output size: " << output_data_size << std::endl;
 
 		// write to buffers
 		for (int i = 0; i < num_in; i++){
 			in_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * data_sizes_input[i], inputs[i]);
 			in_stride_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_strides[i].data());
-			assert(dimensions == input_strides[i].size());
 			in_offset_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_offset[i].data());
+			assert(dimensions == input_strides[i].size());
 			assert(dimensions == input_offset[i].size());
 		}
 
-		out_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * data_size_output, outputs[0]);
+		out_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * output_data_size, outputs[0]);
 		out_shape_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_shape.data());
 		out_stride_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_stride.data());
 		out_offset_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_offset.data());
@@ -449,7 +393,7 @@ void run_broadcast_kernel(std::string kernel_name,
 
 		kernel.setArg(6, A_lin_offset);
 		kernel.setArg(7, B_lin_offset);
-		kernel.setArg(13, out_lin_offset); 
+		kernel.setArg(13, output_lin_offset); 
 
 		std::cout << "INFO: linear offsets has been set." <<std::endl;
 
@@ -481,49 +425,6 @@ void run_broadcast_kernel(std::string kernel_name,
 
 		q.finish();
 	}
-}
-
-
-int vec_sum(std::vector<bool> v){
-	int s=0;
-	int dims = v.size();
-	for (int i=0; i<dims; i++){
-		s+=v[i];
-	}
-	return s;
-}
-
-std::vector<int> get_stride_from_shape(std::vector<int> shape){
-	int dims = shape.size();
-	std::vector<int> stride(dims);
-	// stride for dimension i is cumulative product of size of dimensions higher than i.
-
-	for (int i=0; i<dims; i++){
-		stride[i] = cumprod(std::vector<int>(shape.begin() + i + 1, shape.end()));
-		if (shape[i] == 1){
-			stride[i] = 0;
-		}
-	}
-
-	return stride;
-}
-
-// Memory alignment
-template <typename T>
-T *aligned_alloc(std::size_t num)
-{
-	void *ptr = nullptr;
-	if (posix_memalign(&ptr, 4096, num * sizeof(T)))
-	{
-		throw std::bad_alloc();
-	}
-	return reinterpret_cast<T *>(ptr);
-}
-
-// Compute time difference
-unsigned long diff(const struct timeval *newTime, const struct timeval *oldTime)
-{
-	return (newTime->tv_sec - oldTime->tv_sec) * 1000000 + (newTime->tv_usec - oldTime->tv_usec);
 }
 
 void run_gtsv(std::string kernel_name, int kernel_size, std::vector<double *> &inputs, std::vector<cl::Device> &devices, cl::Context &context, cl::Program::Binaries &bins, cl::CommandQueue &q)
@@ -595,148 +496,6 @@ void run_gtsv(std::string kernel_name, int kernel_size, std::vector<double *> &i
 		}
 }
 
-void run_kernel(std::string kernel_name, int kernel_size, std::vector<double *> &inputs, std::vector<double *> &outputs, std::vector<cl::Device> &devices, cl::Context &context, cl::Program::Binaries &bins, cl::CommandQueue &q)
-	{
-		// this is a helper function to execute a kernel.
-		{
-		cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
-		cl::Kernel kernel(program, kernel_name.data());
-
-		std::cout << "INFO: Kernel '" << kernel_name << "' has been created" << std::endl;
-
-		int num_in = inputs.size();
-		int num_out = outputs.size();
-
-		std::vector<cl::Buffer> in_buffers(num_in);
-		std::vector<cl::Buffer> out_buffers(num_out);
-
-		for (int i = 0; i < num_in; i++)
-		{
-				in_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, sizeof(double) * kernel_size, inputs[i]);
-		}
-
-		for (int i = 0; i < num_out; i++)
-		{
-				out_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, sizeof(double) * kernel_size, outputs[i]);
-		}
-
-		std::cout << "INFO: Buffers has been created" << std::endl;
-
-		kernel.setArg(0, kernel_size); //we need to set arg0 to size!
-
-		for (int i = 0; i < num_in; i++)
-		{
-				kernel.setArg(i + 1, in_buffers[i]);
-				q.enqueueMigrateMemObjects({in_buffers[i]}, 0);
-		}
-
-		for (int i = 0; i < num_out; i++)
-		{
-				kernel.setArg(i + num_in + 1, out_buffers[i]);
-		}
-
-		std::cout << "INFO: Arguments has been set" << std::endl;
-
-		std::cout << "INFO: Migrated to device" << std::endl;
-
-		q.enqueueTask(kernel);
-
-		q.finish();
-
-		q.enqueueMigrateMemObjects({out_buffers[0]}, CL_MIGRATE_MEM_OBJECT_HOST); // 1 : migrate from dev to host
-
-		std::cout << "INFO: Migrated to back to host" << std::endl;
-
-		q.finish();
-        }
-}
-
-
-
-std::vector<bool> singleton_dimension_mask(std::vector<int> v){
-	int dimensions = v.size();
-	std::vector<bool> mask(dimensions);
-	for (int i=0; i<dimensions; i++){
-		if (v[i] == 1){
-			mask[i] = true;
-		} else {
-			mask[i] = false;
-		}
-	}
-	return mask;
-}
-
-void remove_leading_zeros(std::vector<int> &v){
-	int dims = v.size();
-	int leading_zeros = 0;
-	for (int i=0; i<dims; i++){
-		if (v[i] == 0){
-			leading_zeros++;
-		} else {
-			break;
-		}
-	} 
-	v = std::vector<int>(v.begin() + leading_zeros, v.end());
-}
-
-bool mask_equality(std::vector<bool> mask_A, std::vector<bool> mask_B){
-	int dims = mask_A.size();
-
-	for (int i=0; i<dims; i++){
-		if (mask_A[i] != mask_B[i]){
-			return false;
-		}
-	}
-	return true;
-}
-
-void rebuild_stride_old(std::vector<int> &stride, std::vector<bool> input_singleton_mask, std::vector<bool> output_singleton_mask){
-	std::vector<int> stride_pool;
-	int dimensions = output_singleton_mask.size();
-
-	
-	std::cout << "Attempting to rebuild strides for stride vector ";
-	print_vec(stride);
-	std::cout << "Input mask is ";
-	print_vec(input_singleton_mask);
-	std::cout << "Output mask is ";
-	print_vec(output_singleton_mask);
-	std::cout << "Building stride pool...\n";
-	
-
-	for (int i=0; i<dimensions; i++){
-		if (!input_singleton_mask[i]){
-			stride_pool.push_back(stride[i]);
-		}
-	}
-
-	
-	std::cout << "stride pool is: ";
-	print_vec(stride_pool);
-	std::cout << "rebulding stride...\n";
-	
-	std::vector<int> output_mask_where;
-	for (int i=0; i<dimensions; i++){
-		if (!output_singleton_mask[i]){
-			output_mask_where.push_back(i); //All the places we could possible put a stride. We put it into the most-leading dimensions.
-		}
-	}
-
-	std::cout << "available indexes to put new strides: ";
-	print_vec(output_mask_where);
-
-	int available_strides = stride_pool.size();
-	for (int i=0; i<available_strides; i++){
-		stride[output_mask_where.back()] = stride_pool.back();
-		stride_pool.pop_back();
-		output_mask_where.pop_back();
-	}
-
-	std::cout << "new stride:\n";
-	print_vec(stride);
-}
-
-
 void run_where_kernel(std::string kernel_name, 
 							std::vector<double *> &inputs,
 							std::vector<double *> &outputs,
@@ -764,6 +523,7 @@ void run_where_kernel(std::string kernel_name,
 
 		//num inputs outputs
 		int num_in = inputs.size();
+		int dimensions;
 		int num_out = outputs.size();
 
 		//setup buffers:
@@ -777,87 +537,32 @@ void run_where_kernel(std::string kernel_name,
 		cl::Buffer out_offset_buffer;
 		cl::Buffer out_offset_end_buffer;
 
-		std::cout << "INFO: Buffers initialized. Calculating sizes, shapes, strides etc...\n";
-
-		//calculate size variables
-		int len_A, len_B, len_C, len_out;
-		len_A = A_shape.size(),
-		len_B = B_shape.size(),
-		len_C = C_shape.size();
-		len_out = output_shape.size();
-		int max_in = std::max(len_C, std::max(len_A, len_B));
-		int dimensions = std::max(max_in, len_out);
-		pad_begin(A_shape, 1, dimensions); //add singleton dimensions
-		pad_begin(B_shape, 1, dimensions);
-		pad_begin(C_shape, 1, dimensions);
-		pad_begin(output_shape, 1, dimensions);
-		pad_begin(A_offset, 0, dimensions); //zero pad offsets if not defined
-		pad_begin(B_offset, 0, dimensions);
-		pad_begin(C_offset, 0, dimensions);
-		pad_begin(output_offset, 0, dimensions);
-		pad_begin(A_offset_end, 0, dimensions);
-		pad_begin(B_offset_end, 0, dimensions);
-		pad_begin(C_offset_end, 0, dimensions);
-		pad_begin(output_offset_end, 0, dimensions);
-
-		std::cout << "INFO: Basic size stuff calculated. Rebuiling for edge cases...\n";
-
-		//calculate view shapes:
-		std::vector<int> A_view_shape, B_view_shape, C_view_shape, output_view_shape; 
-		A_view_shape = sub_vecs(add_vecs(A_shape, A_offset_end), A_offset); //A_offset_end is a negative index indicating how many to take from the end. 
-		B_view_shape = sub_vecs(add_vecs(B_shape, B_offset_end), B_offset); //A_offset_end is a negative index indicating how many to take from the end. 
-		C_view_shape = sub_vecs(add_vecs(C_shape, C_offset_end), C_offset); //A_offset_end is a negative index indicating how many to take from the end. 
-		output_view_shape = sub_vecs(add_vecs(output_shape, output_offset_end), output_offset); //A_offset_end is a negative index indicating how many to take from the end. 
-
-		for (int i=0; i<dimensions; i++){
-			A_offset[i] -= output_offset[i];
-			B_offset[i] -= output_offset[i];
-			C_offset[i] -= output_offset[i];
-		}
-
-		std::cout << "INFO: view shapes found...\n";
-
-		std::vector<int> data_sizes_input = {cumprod(A_shape), cumprod(B_shape), cumprod(C_shape)};
-		int data_size_output = cumprod(output_shape);
-
 		std::vector<int> A_stride, B_stride, C_stride, output_stride;
+		int A_lin_offset, B_lin_offset, C_lin_offset, output_lin_offset;
+		int output_data_size, C_data_size, B_data_size, A_data_size;
+	
+		std::vector<int> output_offset_B_copy(output_offset);
+		std::vector<int> output_offset_end_B_copy(output_offset_end);
+		std::vector<int> output_stride_B_copy(output_stride);
+		std::vector<int> output_shape_B_copy(output_shape);
+		int output_lin_offset_B_copy, output_data_size_B_copy;
 
-		//calculate strides and offsets
-		output_stride = get_stride_from_shape(output_shape);
-		A_stride = get_stride_from_shape(A_shape);
-		B_stride = get_stride_from_shape(B_shape);
-		C_stride = get_stride_from_shape(C_shape);
+		std::vector<int> output_offset_C_copy(output_offset);
+		std::vector<int> output_offset_end_C_copy(output_offset_end);
+		std::vector<int> output_stride_C_copy(output_stride);
+		std::vector<int> output_shape_C_copy(output_shape);
+		int output_lin_offset_C_copy, output_data_size_C_copy;
 
-		std::cout << "INFO: naive strides found...\n";
 
-		//Find possible singleton dimensions in inputs and output
-		std::vector<bool> output_view_singleton_dimensions = singleton_dimension_mask(output_view_shape);
-		std::vector<bool> A_view_singleton_dimensions = singleton_dimension_mask(A_view_shape);
-		std::vector<bool> B_view_singleton_dimensions = singleton_dimension_mask(B_view_shape);
-		std::vector<bool> C_view_singleton_dimensions = singleton_dimension_mask(C_view_shape);
-			
-		std::vector<bool> A_singleton_dimensions = singleton_dimension_mask(A_shape);
-		std::vector<bool> B_singleton_dimensions = singleton_dimension_mask(B_shape);
-		std::vector<bool> C_singleton_dimensions = singleton_dimension_mask(C_shape);
-		std::cout << "INFO: Singleton masks found...\n";
+		negotiate_strides(A_shape, output_shape, A_offset, output_offset, A_offset_end, output_offset_end, A_stride, output_stride, A_lin_offset, output_lin_offset, dimensions, A_data_size, output_data_size);
+		negotiate_strides(B_shape, output_shape_B_copy, B_offset, output_offset_B_copy, B_offset_end, output_offset_end_B_copy, B_stride, output_stride_B_copy, B_lin_offset, output_lin_offset_B_copy, dimensions, B_data_size, output_data_size_B_copy);
+		negotiate_strides(C_shape, output_shape_C_copy, C_offset, output_offset_C_copy, C_offset_end, output_offset_end_C_copy, C_stride, output_stride_C_copy, C_lin_offset, output_lin_offset_C_copy, dimensions, C_data_size, output_data_size_C_copy);
 
-		//Output is correctly strided by assumption: If you supply correct dimension of output i will loop trough every entry exactly once with strides calculated from you supplied shape.
-		//If inputs is not the same dimensions as output, we get in trouble with naive strides. We instead must rearrange the strides of inputs such that:
-		//1: Strides corresponding to singelton dimensions gets removed from "stride pool"
-		//2: stride pool is then arranged in-order skipping any singleton dimensions in the output. 
-
-		if (!mask_equality(A_singleton_dimensions, A_view_singleton_dimensions) || !mask_equality(B_singleton_dimensions, B_view_singleton_dimensions) || !mask_equality(C_singleton_dimensions, C_view_singleton_dimensions)){
-			rebuild_stride_old(A_stride, A_view_singleton_dimensions, output_view_singleton_dimensions);
-			rebuild_stride_old(B_stride, B_view_singleton_dimensions, output_view_singleton_dimensions);
-			rebuild_stride_old(C_stride, C_view_singleton_dimensions, output_view_singleton_dimensions);
-		}
-		//remove_leading_zeros(output_stride);
-
-		std::cout << "INFO: Rebuild strides taking singletons dimensions into account\n";
 
 		//create "looping over" vectors (seems stupid to it this way...)
 		std::vector<std::vector<int>> input_strides = {A_stride, B_stride, C_stride};
 		std::vector<std::vector<int>> input_offset = {A_offset, B_offset, C_offset};
+		std::vector<int> data_sizes_input = {A_data_size, B_data_size, C_data_size};
 
 		//print debug info:
 		std::cout << "A_shapes: ";
@@ -868,24 +573,6 @@ void run_where_kernel(std::string kernel_name,
 		print_vec(C_shape);
 		std::cout << "Out_shapes ";
 		print_vec(output_shape);
-
-		std::cout << "A_view_shapes: ";
-		print_vec(A_view_shape);
-		std::cout << "B_view_shapes: ";
-		print_vec(B_view_shape);		
-		std::cout << "C_view_shapes: ";
-		print_vec(C_view_shape);
-		std::cout << "output_view_shapes ";
-		print_vec(output_view_shape);
-
-		std::cout << "Singleton dimenions A:";
-		print_vec(A_view_singleton_dimensions);
-		std::cout << "Singleton dimenions B:";
-		print_vec(B_view_singleton_dimensions);
-		std::cout << "Singleton dimenions C:";
-		print_vec(B_view_singleton_dimensions);
-		std::cout << "Singleton dimenions output:";
-		print_vec(output_view_singleton_dimensions);
 
 		std::cout << "A_offset: ";
 		print_vec(A_offset);
@@ -916,20 +603,27 @@ void run_where_kernel(std::string kernel_name,
 		print_vec(output_stride);
 
 		std::cout << "Input size: " << data_sizes_input[0] << ", " << data_sizes_input[1] << ", " << data_sizes_input[2] << std::endl;
-		std::cout << "Output size: " << data_size_output << std::endl;
+		std::cout << "Output size: " << output_data_size << std::endl;
 
 		// write to buffers
 		for (int i = 0; i < num_in; i++){
 			in_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * data_sizes_input[i], inputs[i]);
 			in_stride_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_strides[i].data());
 			in_offset_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_offset[i].data());
+			assert(dimensions == input_strides[i].size());
+			assert(dimensions == input_offset[i].size());
 		}
 
-		out_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * data_size_output, outputs[0]);
+		out_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * output_data_size, outputs[0]);
 		out_shape_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_shape.data());
 		out_stride_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_stride.data());
 		out_offset_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_offset.data());
 		out_offset_end_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_offset_end.data());
+
+		assert(output_shape.size() == dimensions);
+		assert(output_stride.size() == dimensions);
+		assert(output_offset.size() == dimensions);
+		assert(output_offset_end.size() == dimensions);
 
 		std::cout << "INFO: Buffers has been created" << std::endl;
 
@@ -957,12 +651,19 @@ void run_where_kernel(std::string kernel_name,
 
 		std::cout << "INFO: offests has been set." <<std::endl;
 
+		kernel.setArg(9, A_lin_offset);
+		kernel.setArg(10, B_lin_offset);
+		kernel.setArg(11, C_lin_offset); 
+		kernel.setArg(17, output_lin_offset); 
+
+		std::cout << "INFO: linear offsets has been set." <<std::endl;
+
 		//set outputs
-		kernel.setArg(3 * num_in, out_buffer);			  //arg6
-		kernel.setArg(3 * num_in + 1, out_shape_buffer);	  //arg7
-		kernel.setArg(3 * num_in + 2, out_stride_buffer); //arg8
-		kernel.setArg(3 * num_in + 3, out_offset_buffer);		  //arg9
-		kernel.setArg(3 * num_in + 4, out_offset_end_buffer);  //arg10
+		kernel.setArg(4 * num_in, out_buffer);			  //arg6
+		kernel.setArg(4 * num_in + 1, out_shape_buffer);	  //arg7
+		kernel.setArg(4 * num_in + 2, out_stride_buffer); //arg8
+		kernel.setArg(4 * num_in + 3, out_offset_buffer);		  //arg9
+		kernel.setArg(4 * num_in + 4, out_offset_end_buffer);  //arg10
 
 		q.enqueueMigrateMemObjects({out_shape_buffer}, 0);
 		q.enqueueMigrateMemObjects({out_stride_buffer}, 0);
@@ -985,7 +686,175 @@ void run_where_kernel(std::string kernel_name,
 	}
 }
 
+void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<double> &mask, xt::xarray<double> &dx, int axis, xt::xarray<double> &cost, xt::xarray<double> &cosu,
+							std::vector<cl::Device> &devices,
+							cl::Context &context,
+							cl::Program::Binaries &bins,
+							cl::CommandQueue &q){
 
+	// start by getting indexing:
+	std::vector<std::vector<int>> starts, ends, mask_starts, mask_ends;
+	std::vector<double*> inputs, outputs;
+
+	// permute depending on which axis we are working
+
+	xt::xarray<double> zero = xt::zeros<double>({1});
+	xt::xarray<double> velfac, dx_local;
+	std::vector<int> dx_local_shape, velfac_shape, velfac_starts, velfac_ends, dx_shape;
+
+	if (axis==0){
+		for (int n=-1; n<3; n++){
+			starts.push_back({1 + n, 2, 0, 0});
+			ends.push_back({-2 + n, -2 , 0, -2});
+			mask_starts.push_back({1 + n, 2, 0, });
+			mask_ends.push_back({-2 + n, -2 , 0, }); // the masks are 3d sized {X, Y, Z}, we can't have the last (constnat) index on them. 
+		}
+			dx_local_shape = {X-3, Y-4, 1};
+			dx_shape = {X};
+			velfac_shape = {1};
+			velfac_starts = {0,};
+			velfac_ends = {0,};
+
+			dx_local = xt::zeros<double>(dx_local_shape);
+			velfac = xt::ones<double>({1});
+
+			inputs = {cost.data(), dx.data()};
+			outputs = {dx_local.data()};
+			run_broadcast_kernel("mult2d", inputs, outputs, 
+				{1, Y, 1}, {X, 1 ,1 }, dx_local_shape,					//shapes
+				{0, 2, 0}, {1, 0, 0}, {0, 0, 0},						//start index
+				{0, -2, 0}, {-2, 0, 0,}, {0, 0, 0},					//negativ end index
+				devices, context, bins, q);	
+	} 
+	/*if (axis==1){
+		for (int n=-1; n<3; n++){
+			starts.push_back({2, 1+n, 0, 1});
+			ends.push_back({-2, -2+n, 0, -1});
+		}
+
+		std::vector<int> dx_local_shape = {1, 29, 1};
+		std::vector<int> velfac_shape = {1, 29, 1};
+		std::vector<int> velfac_starts = {0, 0, 0};
+		std::vector<int> velfac_ends = {0, 0, 0};
+
+		xt::xarray<double> dx_local = xt::zeros<double>({dx_local_shape});
+
+		inputs = {cost.data(), dx.data()};
+		outputs = {dx_local.data()};
+		run_broadcast_kernel("mult1d", inputs, outputs, 
+			{Y}, {X,}, dx_local_shape,					//shapes
+			{1}, {1,}, {0, 0, 0},						//start index
+			{-2}, {-2,}, {0, 0, 0},					//negativ end index
+			devices, context, bins, q);	
+
+		inputs = {zero.data(), cosu.data()};
+		outputs = {dx_local.data()};
+		run_broadcast_kernel("add1d", inputs, outputs, 
+			{0}, {X,}, velfac_shape,					//shapes
+			{0}, {1,}, {0, 0, 0},						//start index
+			{0}, {-2,}, {0, 0, 0},					//negativ end index
+			devices, context, bins, q);	
+	} 
+	if (axis==2){
+		for (int n=-1; n<3; n++){
+			starts.push_back({2, 2, 1+n, 1});
+			ends.push_back({-2, -2, -2+n, -1});
+		}
+			std::vector<int> dx_local_shape = {1, 1, 3};
+			std::vector<int> velfac_shape = {1,};
+			std::vector<int> velfac_starts = {0,};
+			std::vector<int> velfac_ends = {0,};
+
+			xt::xarray<double> velfac = xt::ones<double>({1});
+	} */
+
+	//start contain start index of the slices. in pyhpc benchark they are called sm1, s, sp1, sp2. starting index of s is then starts[1]
+
+	std::vector<int> intermediate_shape = {X-starts[1][0] + ends[1][0], Y - starts[1][1] + ends[1][1], Z - starts[1][2] + ends[1][2]};
+	xt::xarray<double> uCFL = xt::zeros<double>(intermediate_shape);
+	xt::xarray<double> rjp = xt::zeros<double>(intermediate_shape);
+	xt::xarray<double> rj = xt::zeros<double>(intermediate_shape);
+	xt::xarray<double> rjm = xt::zeros<double>(intermediate_shape);
+	xt::xarray<double> cr = xt::zeros<double>(intermediate_shape);
+
+	//ucfl
+	inputs = {velfac.data(), vel.data()};
+	outputs = {uCFL.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		velfac_shape, {X, Y, Z, 3}, intermediate_shape,					//shapes
+		velfac_starts, starts[1], {0, 0, 0},						//start index
+		velfac_ends, ends[1], {0, 0, 0},					//negativ end index
+		devices, context, bins, q);	
+
+	inputs = {uCFL.data(), dx_local.data()};
+	outputs = {uCFL.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		intermediate_shape, dx_local_shape, intermediate_shape,					//shapes
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//start index
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {uCFL.data(), zero.data()}; //second input does nothing abs only takes one input. needs to be here because run broadcast kernel is shit
+	outputs = {uCFL.data()};
+	run_broadcast_kernel("abs3d", inputs, outputs, 
+		intermediate_shape, {1}, intermediate_shape,					//shapes
+		{0, 0, 0}, {0}, {0, 0, 0},						//start index
+		{0, 0, 0}, {0}, {0, 0, 0},					//negativ end index
+		devices, context, bins, q);
+
+	// rjp
+	inputs = {vel.data(), vel.data()};
+	outputs = {rjp.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{X, Y, Z, 3}, {X, Y, Z, 3}, intermediate_shape,					//shapes
+		start[3], start[2], {0, 0, 0},						//start index
+		end[3], end[2], {0, 0, 0},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {mask.data(), rjp.data()};
+	outputs = {rjp.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X, Y, Z,}, intermediate_shape, intermediate_shape,					//shapes
+		mask_start[2], {0, 0, 0}, {0, 0, 0},						//start index
+		mask_end[2], {0, 0, 0}, {0, 0, 0},					//negativ end index
+		devices, context, bins, q);
+
+	//rj
+	inputs = {vel.data(), vel.data()};
+	outputs = {rj.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{X, Y, Z, 3}, {X, Y, Z, 3}, intermediate_shape,					//shapes
+		start[2], start[1], {0, 0, 0},						//start index
+		end[2], end[1], {0, 0, 0},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {mask.data(), rjp.data()};
+	outputs = {rj.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X, Y, Z,}, intermediate_shape, intermediate_shape,					//shapes
+		mask_start[1], {0, 0, 0}, {0, 0, 0},						//start index
+		mask_end[1], {0, 0, 0}, {0, 0, 0},					//negativ end index
+		devices, context, bins, q);
+
+	//rjm
+	inputs = {vel.data(), vel.data()};
+	outputs = {rjm.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{X, Y, Z, 3}, {X, Y, Z, 3}, intermediate_shape,					//shapes
+		start[1], start[0], {0, 0, 0},						//start index
+		end[1], end[0], {0, 0, 0},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {mask.data(), rjmp.data()};
+	outputs = {rjm.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X, Y, Z,}, intermediate_shape, intermediate_shape,					//shapes
+		mask_start[0], {0, 0, 0}, {0, 0, 0},						//start index
+		mask_end[0], {0, 0, 0}, {0, 0, 0},					//negativ end index
+		devices, context, bins, q);
+
+	//unroll cr. some confusing stuff is in here!
+}
 
 // Arguments parser
 class ArgParser
@@ -1015,7 +884,7 @@ private:
 int main(int argc, const char *argv[])
 {
 	// Init of FPGA device
-	std::string xclbin_path = "./kernels.xclbin";
+	std::string xclbin_path = "./sw_emu_kernels.xclbin";
 	std::vector<cl::Device> devices = xcl::get_xil_devices();
 	cl::Device device = devices[0];
 	cl::Context context(device);
@@ -1062,7 +931,6 @@ int main(int argc, const char *argv[])
 	xt::xarray<double> delta = xt::zeros<double>({X-4, Y-4, Z});
 	xt::xarray<double> ks = xt::zeros<double>({X-4, Y-4});
 	xt::xarray<double> tke_surf_corr = xt::zeros<double>({X,Y});
-	xt::xarray<double> mask = xt::zeros<double>({X-4,Y-4});
 
 
 	int tau = 0;
@@ -1074,7 +942,6 @@ int main(int argc, const char *argv[])
 	double AB_eps = 0.1;
 	double alpha_tke = 1.;
 	double c_eps = 0.7;
-	double K_h_tke = 2000.;
 
 	std::vector<double *> inputs;
 	std::vector<double *> outputs;
@@ -1085,7 +952,8 @@ int main(int argc, const char *argv[])
 	xt::xarray<double> zero = xt::zeros<double>({1});
 	xt::xarray<double> half = xt::ones<double>({1}) * 0.5;
 	xt::xarray<double> two = xt::ones<double>({1}) * 2;
-	
+	xt::xarray<double> K_h_tke = xt::ones<double>({1}) * 2000;
+
 	//kbot
 	inputs = {kbot.data(), one.data()};
 	outputs = {ks.data()};
@@ -1104,9 +972,13 @@ int main(int argc, const char *argv[])
 		{0, 0, 0, -2}, {0}, {0, 0, 0}, 			//negativ end index
 		devices, context, bins, q);
 
-	inputs = {sqrttke.data()};
+	inputs = {sqrttke.data(), zero.data()}; //sqrt takes one argument. zero does nothing
 	outputs = {sqrttke.data()};
-	run_kernel("vsqrt", size_3d, inputs, outputs, devices, context, bins, q);
+	run_broadcast_kernel("sqrt3d", inputs, outputs, 
+		{X, Y, Z,}, {1}, {X, Y, Z,},			//shapes
+		{0, 0, 0,}, {0}, {0, 0, 0,},			//start index
+		{0, 0, 0,}, {0}, {0, 0, 0}, 			//negativ end index
+		devices, context, bins, q);
 
 	//delta
 	inputs = {kappaM.data(), kappaM.data()};
@@ -1481,7 +1353,7 @@ int main(int argc, const char *argv[])
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
 		devices, context, bins, q);
 
-/*
+
 	//prepare inputs for gtsv
 	inputs = {a_tri.data(), zero.data()}; //This is such a hack.. We need to write and assignment kernel also!
 	outputs = {a_tri.data()};
@@ -1502,33 +1374,265 @@ int main(int argc, const char *argv[])
 	a_tri[0] = 0; 	//on a tri-diagonal matrix, upper and lower diagonals have n-1 entries. We zero them like this to fit gtsv kernel convetion
 	c_tri[(X-4)*(Y-4)*Z - 1] = 0;
 
+	
 	inputs = {a_tri.data(), b_tri.data(), c_tri.data(), d_tri.data()};
 	run_gtsv("gtsv", (X-4)*(Y-4)*Z, inputs, devices, context, bins, q); //this outputs ans into d_tri (xilinx solver kernel choice, not mine)
 
+	
 	inputs = {water_mask.data(), d_tri.data(), tke.data()};
 	outputs = {tke.data()};
-	run_where_kernel("where4d", inputs, outputs,
-	{X-4, Y-4, Z, 1}, {X-4, Y-4, Z, 1}, {X, Y, Z, 3}, {X, Y, Z, 3},
-	{0, 0, 0, 0}, {0, 0, 0, 0}, {2, 2, 0, 1}, {2, 2, 0, 1},
-	{0, 0, 0, 0}, {0, 0, 0, 0}, {-2, -2, 0, -1}, {-2, -2, 0, -1},
+	run_where_kernel("where3d", inputs, outputs,
+	{X-4, Y-4, Z,}, {X-4, Y-4, Z,}, {X, Y, Z, 3}, {X, Y, Z, 3},
+	{0, 0, 0}, {0, 0, 0}, {2, 2, 0, 1}, {2, 2, 0, 1},
+	{0, 0, 0}, {0, 0, 0}, {-2, -2, 0, -1}, {-2, -2, 0, -1},
 	devices, context, bins, q);
 
-	inputs = {zero.data(), tke.data()}; //This is such a hack.. We need to write an assignment kernel also!
+	xt::xarray<double> mask = xt::zeros<double>({X-4,Y-4});
+	
+	inputs = {zero.data(), tke.data()};
 	outputs = {mask.data()};
-	run_broadcast_kernel("get4d", inputs, outputs, 
-		{1}, {X, Y, Z, 3}, {1, 1, X-4, Y-4,},			//shapes
-		{0}, {2, 2, Z-1, 1}, {0, 0, 0, 0,},						//start index
-		{0}, {-2, -2, 0, -1}, {0, 0, 0, 0, },						//negativ end index
+	run_broadcast_kernel("gt2d", inputs, outputs, 
+		{1}, {X, Y, Z, 3}, {X-4, Y-4,},					//shapes
+		{0}, {2, 2, Z-1, 1}, {0, 0,},						//start index
+		{0}, {-2, -2, 0, -1}, {0, 0, },					//negativ end index
 		devices, context, bins, q);
 
-	inputs = {mask.data(), d_tri.data(), tke.data()};
-	outputs = {tke.data()};
-		run_where_kernel("where4d", inputs, outputs,
-		{X-4, Y-4, Z, 1}, {X-4, Y-4, Z, 1}, {X, Y, Z, 3}, {X, Y, Z, 3},
-		{0, 0, 0, 0}, {0, 0, 0, 0}, {2, 2, 0, 1}, {2, 2, 0, 1},
-		{0, 0, 0, 0}, {0, 0, 0, 0}, {-2, -2, 0, -1}, {-2, -2, 0, -1},
+	inputs = {zero.data(), tke.data()};
+	outputs = {tke_surf_corr.data()};
+	run_broadcast_kernel("sub2d", inputs, outputs, 
+		{1}, {X, Y, Z, 3}, {X, Y,},					//shapes
+		{0}, {2, 2, Z-1, 1}, {2, 2,},						//start index
+		{0}, {-2, -2, 0, -1}, {-2, -2, },					//negativ end index
+		devices, context, bins, q);	
+
+	
+	inputs = {half.data(), tke_surf_corr.data()};
+	outputs = {tke_surf_corr.data()};
+	run_broadcast_kernel("mult2d", inputs, outputs, 
+		{1}, {X, Y, }, {X, Y,},					//shapes
+		{0}, {2, 2,}, {2, 2,},						//start index
+		{0}, {-2, -2}, {-2, -2, },					//negativ end index
+		devices, context, bins, q);	
+
+	inputs = {dzw.data(), tke_surf_corr.data()};
+	outputs = {tke_surf_corr.data()};
+	run_broadcast_kernel("mult2d", inputs, outputs, 
+		{Z}, {X, Y, }, {X, Y,},					//shapes
+		{Z-1}, {2, 2,}, {2, 2,},						//start index
+		{0}, {-2, -2}, {-2, -2, },					//negativ end index
+		devices, context, bins, q);	
+	
+	inputs = {mask.data(), tke_surf_corr.data(), zero.data()};
+	outputs = {tke_surf_corr.data()};
+	run_where_kernel("where2d", inputs, outputs,
+	{X-4, Y-4,}, {X, Y}, {1}, {X, Y,},
+	{0, 0,}, {2, 2,}, {0,}, {2, 2,},
+	{0, 0,}, {-2,-2,}, {0,}, {-2, -2,},
+	devices, context, bins, q);
+
+	// flux east
+	inputs = {tke.data(), tke.data()};
+	outputs = {flux_east.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{X, Y, Z, 3}, {X, Y, Z, 3}, {X, Y, Z},					//shapes
+		{1, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0,},						//start index
+		{0, 0, 0, -2}, {-1, 0, 0, -2}, {-1, 0, 0, },					//negativ end index
 		devices, context, bins, q);
-*/
+
+	inputs = {K_h_tke.data(), flux_east.data()};
+	outputs = {flux_east.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{1}, {X, Y, Z,}, {X, Y, Z},					//shapes
+		{0,}, {0, 0, 0,}, {0, 0, 0,},						//start index
+		{0,}, {-1, 0, 0, }, {-1, 0, 0, },					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {flux_east.data(), cost.data()};
+	outputs = {flux_east.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X, Y, Z}, {1, X, 1}, {X, Y, Z},					//shapes
+		{0, 0, 0,}, {0, 0, 0}, {0, 0, 0,},						//start index
+		{-1, 0, 0}, { 0, 0, 0}, {-1, 0, 0, },					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {flux_east.data(), dxu.data()};
+	outputs = {flux_east.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X, Y, Z}, {X, 1, 1}, {X, Y, Z},					//shapes
+		{0, 0, 0,}, {0, 0, 0}, {0, 0, 0,},						//start index
+		{-1, 0, 0}, {-1, 0, 0}, {-1, 0, 0, },					//negativ end index
+		devices, context, bins, q);
+	
+	inputs = {flux_east.data(), maskU.data()};
+	outputs = {flux_east.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X, Y, Z}, {X, Y, Z}, {X, Y, Z},					//shapes
+		{0, 0, 0,}, {0, 0, 0}, {0, 0, 0,},						//start index
+		{-1, 0, 0}, {-1, 0, 0}, {-1, 0, 0, },					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {flux_east.data(), zero.data()};
+	outputs = {flux_east.data()};
+	run_broadcast_kernel("mult2d", inputs, outputs, 
+		{X, Y, Z}, {1}, {X, Y, Z},					//shapes
+		{X-1, 0, 0,}, {0,}, {X-1, 0, 0,},						//start index
+		{0, 0, 0}, {0,}, {0, 0, 0, },					//negativ end index
+		devices, context, bins, q);
+
+	//flux norht
+	inputs = {tke.data(), tke.data()};
+	outputs = {flux_north.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{X, Y, Z, 3}, {X, Y, Z, 3}, {X, Y, Z},					//shapes
+		{0, 1, 0, 0}, {0, 0, 0, 0}, {0, 0, 0,},						//start index
+		{0, 0, 0, -2}, {0, -1, 0, -2}, {0, -1, 0, },					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {K_h_tke.data(), flux_north.data()};
+	outputs = {flux_north.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{1}, {X, Y, Z,}, {X, Y, Z},					//shapes
+		{0,}, {0, 0, 0,}, {0, 0, 0,},						//start index
+		{0,}, {0, -1, 0, }, {0, -1, 0, },					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {flux_north.data(), dyu.data()};
+	outputs = {flux_north.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X, Y, Z}, {1, Y, 1}, {X, Y, Z},					//shapes
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0,},						//start index
+		{0, -1, 0}, {0, -1, 0, }, {0, -1, 0, },					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {flux_north.data(), cosu.data()};
+	outputs = {flux_north.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X, Y, Z}, {1, Y, 1}, {X, Y, Z},					//shapes
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0,},						//start index
+		{0, -1, 0}, {0, -1, 0, }, {0, -1, 0, },					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {flux_north.data(), maskV.data()};
+	outputs = {flux_north.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X, Y, Z}, {X, Y, Z}, {X, Y, Z},					//shapes
+		{0, 0, 0}, {0, 0, 0}, {0, 0, 0,},						//start index
+		{0, -1, 0}, {0, -1, 0, }, {0, -1, 0, },					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {flux_north.data(), zero.data()};
+	outputs = {flux_north.data()};
+	run_broadcast_kernel("mult2d", inputs, outputs, 
+		{X, Y, Z}, {1}, {X, Y, Z},					//shapes
+		{0, Y-1, 0,}, {0,}, {0, Y-1, 0,},						//start index
+		{0, 0, 0}, {0,}, {0, 0, 0, },					//negativ end index
+		devices, context, bins, q);
+
+	// Tke temp stuff
+	xt::xarray<double> tke_temp = xt::zeros<double>({X, Y, Z});
+
+	inputs = {flux_east.data(), flux_east.data()};
+	outputs = {tke_temp.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{X, Y, Z}, {X, Y, Z}, {X, Y, Z},					//shapes
+		{2, 2, 0,}, {1, 2, 0,}, {2, 2, 0},						//start index
+		{-2, -2, 0}, {-3, -2, 0,}, {-2, -2, 0},					//negativ end index
+		devices, context, bins, q);	
+
+	inputs = {tke_temp.data(), dxt.data()};
+	outputs = {tke_temp.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X, Y, Z}, {X, 1, 1}, {X, Y, Z},					//shapes
+		{2, 2, 0}, {2, 0, 0,}, {2, 2, 0},						//start index
+		{-2, -2, 0}, {-2, 0, 0,}, {-2, -2, 0},					//negativ end index
+		devices, context, bins, q);		
+
+	
+	inputs = {tke_temp.data(), maskW.data()};
+	outputs = {tke_temp.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X, Y, Z}, {X, Y, Z}, {X, Y, Z},					//shapes
+		{2, 2, 0}, {2, 2, 0,}, {2, 2, 0},						//start index
+		{-2, -2, 0}, {-2, -2, 0,}, {-2, -2, 0},					//negativ end index
+		devices, context, bins, q);	
+
+	inputs = {tke_temp.data(), cost.data()};
+	outputs = {tke_temp.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X, Y, Z}, {1, X, 1}, {X, Y, Z},					//shapes
+		{2, 2, 0}, {0, 2, 0,}, {2, 2, 0},						//start index
+		{-2, -2, 0}, {0, -2, 0,}, {-2, -2, 0},					//negativ end index
+		devices, context, bins, q);		
+
+	inputs = {tke_temp.data(), tke.data()}; //accumulate into tke, reuse tke_temp
+	outputs = {tke.data()};
+	run_broadcast_kernel("add3d", inputs, outputs, 
+		{X, Y, Z}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
+		{2, 2, 0}, {2, 2, 0, 1}, {2, 2, 0, 1},						//start index
+		{-2, -2, 0}, {-2, -2, 0, -1}, {-2, -2, 0, -1},					//negativ end index
+		devices, context, bins, q);	
+
+	inputs = {flux_north.data(), flux_north.data()};
+	outputs = {tke_temp.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{X, Y, Z}, {X, Y, Z}, {X, Y, Z},					//shapes
+		{2, 2, 0}, {2, 1, 0,}, {2, 2, 0},						//start index
+		{-2, -2, 0}, {-2, -3, 0,}, {-2, -2, 0},					//negativ end index
+		devices, context, bins, q);	
+
+	inputs = {tke_temp.data(), cost.data()};
+	outputs = {tke_temp.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X, Y, Z}, {1, Y, 1}, {X, Y, Z},					//shapes
+		{2, 2, 0}, {0, 2, 0,}, {2, 2, 0},						//start index
+		{-2, -2, 0}, {0, -2, 0,}, {-2, -2, 0},					//negativ end index
+		devices, context, bins, q);	
+
+	inputs = {tke_temp.data(), dyt.data()};
+	outputs = {tke_temp.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X, Y, Z}, {1, Y, 1}, {X, Y, Z},					//shapes
+		{2, 2, 0}, {0, 2, 0,}, {2, 2, 0},						//start index
+		{-2, -2, 0}, {0, -2, 0,}, {-2, -2, 0},					//negativ end index
+		devices, context, bins, q);	
+
+	inputs = {tke_temp.data(), maskW.data()};
+	outputs = {tke_temp.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X, Y, Z}, {X, Y, Z}, {X, Y, Z},					//shapes
+		{2, 2, 0}, {2, 2, 0,}, {2, 2, 0},						//start index
+		{-2, -2, 0}, {-2, -2, 0,}, {-2, -2, 0},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {tke_temp.data(), tke.data()}; 
+	outputs = {tke.data()};
+	run_broadcast_kernel("add3d", inputs, outputs, 
+		{X, Y, Z}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
+		{2, 2, 0}, {2, 2, 0, 1}, {2, 2, 0, 1},						//start index
+		{-2, -2, 0}, {-2, 2, 0, -1}, {-2, -2, 0, -1},					//negativ end index
+		devices, context, bins, q);	
+
+	// adv flux superbee wgrid unroll
+	xt::xarray<double> maskUtr = xt::zeros_like(maskW);
+
+	inputs = {maskW.data(), maskW.data()}; 
+	outputs = {maskUtr.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{X, Y, Z}, {X, Y, Z,}, {X, Y, Z,},					//shapes
+		{0, 0, 0}, {1, 0, 0,}, {0, 0, 0,},						//start index
+		{-1, 0, 0}, {0, 0, 0}, {-1, 0, 0},					//negativ end index
+		devices, context, bins, q);	
+
+	inputs = {zero.data(), zero.data()}; //reeeeally need assignment kernel...
+	outputs = {flux_east.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{1}, {1}, {X, Y, Z,},					//shapes
+		{0,}, {0,}, {0, 0, 0,},						//start index
+		{0,}, {0,}, {0, 0, 0},					//negativ end index
+		devices, context, bins, q);	
+
+	adv_superbee(u, tke, maskUtr, dxt, 0, cost, cosu, devices, context, bins, q);
+
 	std::cout << "sqrttke checksum: should be 1679...: " << xt::sum(sqrttke) << std::endl;
 	std::cout << "ks checksum: should be 377...: " << xt::sum(ks) << std::endl;
 	std::cout << "delta checksum: should be 85...: " << xt::sum(delta) << std::endl;
@@ -1543,11 +1647,19 @@ int main(int argc, const char *argv[])
 	std::cout << "edge_mask checksum: should be 584...:" << xt::sum(edge_mask) << std::endl;
 	std::cout << "water_mask checksum: should be 1759...:" << xt::sum(water_mask) << std::endl;	
 	
-	/*std::cout << "not_edge_mask checksum: should be 2552...:" << xt::sum(not_edge_mask) << std::endl;
+	std::cout << "not_edge_mask checksum: should be 2552...:" << xt::sum(not_edge_mask) << std::endl;
 	std::cout << "gtsv doesnt work atm. we hijack checksums to follow wrong solution to implement rest of the code while debug...\n";
 	std::cout << "tke checksum: should be -2052.5 (-926.5)...: " << xt::sum(tke) << std::endl;
+	std::cout << "tke_tmp checksum: should be -2052.5 (-926.5)...: " << xt::sum(tke_temp) << std::endl;
+
+
 	std::cout << "mask:.. (263) "<< xt::sum(mask) << std::endl;	
-	*/
+	std::cout << "tke surf corr (334.4).. " << xt::sum(tke_surf_corr) << std::endl;
+
+	std::cout << "flux east (8060969).. " << xt::sum(flux_east) << std::endl;
+	std::cout << "flux north (48331).. " << xt::sum(flux_north) << std::endl;
+
+
 
 /*	for (int i=0; i<3136; i++){
 		std::cout << a_tri[i] << ", ";

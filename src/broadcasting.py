@@ -71,7 +71,7 @@ def rebuild_strides(strides_in, view_shapes_in, out_dim):
     return strides_in
 
 def build_offsets(start_out, starts_in, view_shapes_in, out_dim):
-    starts_in_singleton_filtered = [tuple(st for st, sh in zip(start, shape) if sh != 1) for start, shape in zip(starts_in, view_shapes_in)]
+    starts_in_singleton_filtered = [zero_on_squeeze(start, view_shape) for start, view_shape in zip(starts_in, view_shapes_in)]
     starts_in_singleton_filtered = [zero_pad(filtered_start, out_dim) for filtered_start in starts_in_singleton_filtered]
     offsets = [tuple(st_in - st_out for st_in, st_out in zip(start_in, start_out)) for start_in in starts_in_singleton_filtered]
     return offsets
@@ -159,30 +159,32 @@ def run_test(test_case, debug=True):
     if debug:
         print(f'Homerolled sum: {output_flat.sum()}')
         print(f'Numpy sum: {output_squeezed.sum()}')
-        print(output_flat)
-        print(output_squeezed)
+        # print(output_flat)
+        # print(output_squeezed)
     assert(output_flat.sum() == output_squeezed.sum())    
 
 test_cases = [
-    {"shapes": [(32, 32, 4, 3), (1,), (32, 32, 4,)],
-      "starts": [(0, 0, 0, 0), (0,), (0, 0, 0)],
-      "ends": [(0, 0, 0, -2), (0,), (0, 0, 0,)]},
-    {"shapes": [(4, 4, 4), (4,), (4, 4, 4,)],
-      "starts": [(0, 0, 1), (1,), (0, 0, 1)],
-      "ends": [(0, 0, -1), (-1,), (0, 0, -1,)]},
-    {"shapes": [(32, 32, 4, 3), (32, 32, 4), (28, 28, 4,)],
-      "starts": [(2, 2, 0, 0), (2, 2, 0), (0, 0, 0)],
-      "ends": [(-2, -2, 0, -2), (-2, -2, 0), (0, 0, 0,)]},
-    {"shapes": [(28, 28, 4,), (1,), (28, 28, 4,)],
-      "starts": [(0, 0, 4-1,), (0,), (0, 0, 4-1)],
-      "ends": [(0, 0, 0), (0,), (0, 0, 0,)]},
-      {"shapes": [(28, 28, 4), (1,), (28, 28, 4,)],
-    "starts": [(0, 0, 4-1), (0,), (0, 0, 4-1)],
-    "ends": [(0, 0, 0,), (0, ), (0, 0, 0,)]},
-     {"shapes": [(3, 1), (1, 3), (3, 3,)],
-     "starts": [(0, 0,), (0, 0,), (0, 0,)],
-     "ends": [(0, 0,), (0, 0,), (0, 0, )]}
-
+    # {"shapes": [(32, 32, 4, 3), (1,), (32, 32, 4,)],
+    #   "starts": [(0, 0, 0, 0), (0,), (0, 0, 0)],
+    #   "ends": [(0, 0, 0, -2), (0,), (0, 0, 0,)]},
+    # {"shapes": [(4, 4, 4), (4,), (4, 4, 4,)],
+    #   "starts": [(0, 0, 1), (1,), (0, 0, 1)],
+    #   "ends": [(0, 0, -1), (-1,), (0, 0, -1,)]},
+    # {"shapes": [(32, 32, 4, 3), (32, 32, 4), (28, 28, 4,)],
+    #   "starts": [(2, 2, 0, 0), (2, 2, 0), (0, 0, 0)],
+    #   "ends": [(-2, -2, 0, -2), (-2, -2, 0), (0, 0, 0,)]},
+    # {"shapes": [(28, 28, 4,), (1,), (28, 28, 4,)],
+    #   "starts": [(0, 0, 4-1,), (0,), (0, 0, 4-1)],
+    #   "ends": [(0, 0, 0), (0,), (0, 0, 0,)]},
+    #   {"shapes": [(28, 28, 4), (1,), (28, 28, 4,)],
+    # "starts": [(0, 0, 4-1), (0,), (0, 0, 4-1)],
+    # "ends": [(0, 0, 0,), (0, ), (0, 0, 0,)]},
+      # {"shapes": [(3, 1), (1, 3), (3, 3,)],
+      # "starts": [(0, 0,), (0, 0,), (0, 0,)],
+      # "ends": [(0, 0,), (0, 0,), (0, 0, )]}
+    {"shapes": [(6, 6,), (6, 1,), (6, 6,)],
+    "starts": [(2, 2, ), (2, 0,), (2, 2,)],
+    "ends": [(-2, -2, ), (-2, 0), (-2, -2,)]}
 
 
     ]

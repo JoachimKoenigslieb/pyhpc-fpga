@@ -29,9 +29,9 @@ extern "C" void get2d(double* A, double* B, int* A_stride, int* B_stride, int* A
 
 	for (int i=(0 + out_offset[0]); i<(out_shape[0] + out_end_offset[0]); i++){
 		for (int j=(0 + out_offset[1]); j<(out_shape[1] + out_end_offset[1]); j++){
-			A_ind = (i + A_offset[0])*A_stride[0] + (j + A_offset[1])*A_stride[1];
-			B_ind = (i + B_offset[0])*B_stride[0] + (j + B_offset[1])*B_stride[1];
-			O_ind = i*out_stride[0] + j*out_stride[1] + out_lin_offset;
+			A_ind = A_lin_offset + (i + A_offset[0])*A_stride[0] + (j + A_offset[1])*A_stride[1];
+			B_ind = B_lin_offset + (i + B_offset[0])*B_stride[0] + (j + B_offset[1])*B_stride[1];
+			O_ind = out_lin_offset + i*out_stride[0] + j*out_stride[1];
 			A_val = A[A_ind];
 			B_val = B[B_ind];
 			if (A_val >= B_val){
