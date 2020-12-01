@@ -704,7 +704,9 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	xt::xarray<double> two = xt::ones<double>({1}) * 2;
 
 	xt::xarray<double> velfac, dx_local;
-	std::vector<int> dx_local_shape, velfac_shape, velfac_starts, velfac_ends, dx_shape;
+	std::vector<int> dx_local_shape, velfac_shape, velfac_starts, velfac_ends, dx_shape, vel_var_shape, mask_shape, intermediate_shape;
+
+	double *vel_save, *var_save, *mask_save; // save the pointer locations so we can swap back l8er
 
 	if (axis==0){
 		for (int n=-1; n<3; n++){
@@ -713,68 +715,134 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 			mask_starts.push_back({1 + n, 2, 0, });
 			mask_ends.push_back({-2 + n, -2 , 0, }); // the masks are 3d sized {X, Y, Z}, we can't have the last (constnat) index on them. 
 		}
-			dx_local_shape = {X-3, Y-4, 1};
-			dx_shape = {X};
-			velfac_shape = {1};
-			velfac_starts = {0,};
-			velfac_ends = {0,};
 
-			dx_local = xt::zeros<double>(dx_local_shape);
-			velfac = xt::ones<double>({1});
+		dx_local_shape = {X-3, Y-4, 1};
+		dx_shape = {X};
+		velfac_shape = {1};
+		velfac_starts = {0,};
+		velfac_ends = {0,};
+		vel_var_shape = {X, Y, Z, 3};
+		mask_shape = {X, Y, Z};
+		intermediate_shape = {X-starts[1][0] + ends[1][0], Y - starts[1][1] + ends[1][1], Z - starts[1][2] + ends[1][2]};
 
-			inputs = {cost.data(), dx.data()};
-			outputs = {dx_local.data()};
-			run_broadcast_kernel("mult2d", inputs, outputs, 
-				{1, Y, 1}, {X, 1 ,1 }, dx_local_shape,					//shapes
-				{0, 2, 0}, {1, 0, 0}, {0, 0, 0},						//start index
-				{0, -2, 0}, {-2, 0, 0,}, {0, 0, 0},					//negativ end index
-				devices, context, bins, q);	
+		dx_local = xt::zeros<double>(dx_local_shape);
+		velfac = xt::ones<double>({1});
+
+		inputs = {cost.data(), dx.data()};
+		outputs = {dx_local.data()};
+		run_broadcast_kernel("mult2d", inputs, outputs, 
+			{1, Y, 1}, {X, 1 ,1 }, dx_local_shape,					//shapes
+			{0, 2, 0}, {1, 0, 0}, {0, 0, 0},						//start index
+			{0, -2, 0}, {-2, 0, 0,}, {0, 0, 0},					//negativ end index
+			devices, context, bins, q);	
 	} 
-	/*if (axis==1){
+	if (axis==1){
 		for (int n=-1; n<3; n++){
-			starts.push_back({2, 1+n, 0, 1});
-			ends.push_back({-2, -2+n, 0, -1});
+			starts.push_back({2, 1+n, 0, 0});
+			ends.push_back({-2, -2+n, 0, -2,});
+			mask_starts.push_back({2, 1+n, 0, });
+			mask_ends.push_back({-2, -2+n, 0, }); // the masks are 3d sized {X, Y, Z}, we can't have the last (constnat) index on them. 
 		}
 
-		std::vector<int> dx_local_shape = {1, 29, 1};
-		std::vector<int> velfac_shape = {1, 29, 1};
-		std::vector<int> velfac_starts = {0, 0, 0};
-		std::vector<int> velfac_ends = {0, 0, 0};
+		dx_local_shape = {1, Y-3, 1};
+		dx_shape = {Y};
+		velfac_shape = {1, Y-3, 1};
+		velfac_starts = {0, 0, 0};
+		velfac_ends = {0, 0, 0};
+		vel_var_shape = {X, Y, Z, 3};
+		mask_shape = {X, Y, Z};
+		intermediate_shape = {X-starts[1][0] + ends[1][0], Y - starts[1][1] + ends[1][1], Z - starts[1][2] + ends[1][2]};
 
-		xt::xarray<double> dx_local = xt::zeros<double>({dx_local_shape});
+		dx_local = xt::zeros<double>(dx_local_shape);
+		velfac = xt::zeros<double>(velfac_shape);
 
 		inputs = {cost.data(), dx.data()};
 		outputs = {dx_local.data()};
 		run_broadcast_kernel("mult1d", inputs, outputs, 
-			{Y}, {X,}, dx_local_shape,					//shapes
-			{1}, {1,}, {0, 0, 0},						//start index
-			{-2}, {-2,}, {0, 0, 0},					//negativ end index
+			{Y}, {X,}, {Y-3},					//shapes
+			{1}, {1,}, {0},						//start index
+			{-2}, {-2,}, {0,},					//negativ end index
 			devices, context, bins, q);	
 
 		inputs = {zero.data(), cosu.data()};
-		outputs = {dx_local.data()};
+		outputs = {velfac.data()};
 		run_broadcast_kernel("add1d", inputs, outputs, 
-			{0}, {X,}, velfac_shape,					//shapes
-			{0}, {1,}, {0, 0, 0},						//start index
-			{0}, {-2,}, {0, 0, 0},					//negativ end index
+			{1}, {X,}, {Y-3},					//shapes
+			{0}, {1,}, {0},						//start index
+			{0}, {-2,}, {0},					//negativ end index
 			devices, context, bins, q);	
 	} 
 	if (axis==2){
 		for (int n=-1; n<3; n++){
-			starts.push_back({2, 2, 1+n, 1});
-			ends.push_back({-2, -2, -2+n, -1});
+			starts.push_back({2, 2, 1+n, 0});
+			ends.push_back({-2, -2, -2+n, -2,});
+			mask_starts.push_back({2, 2, 1+n, });
+			mask_ends.push_back({-2, -2, -2+n, }); // the masks are 3d sized {X, Y, Z}, we can't have the last (constnat) index on them. 
 		}
-			std::vector<int> dx_local_shape = {1, 1, 3};
-			std::vector<int> velfac_shape = {1,};
-			std::vector<int> velfac_starts = {0,};
-			std::vector<int> velfac_ends = {0,};
 
-			xt::xarray<double> velfac = xt::ones<double>({1});
-	} */
+		dx_local_shape = {1, 1, Z-1};
+		dx_shape = {Z};
+		velfac_shape = {1};
+		velfac_starts = {0,};
+		velfac_ends = {0,};
+		vel_var_shape = {X, Y, Z+2, 3}; //This is gonna be needed for z-padding.
+		mask_shape = {X, Y, Z+2};
+		intermediate_shape = {X-starts[1][0] + ends[1][0], Y - starts[1][1] + ends[1][1], Z + 2 - starts[1][2] + ends[1][2]};
+
+		dx_local = xt::zeros<double>(dx_local_shape);
+		velfac = xt::ones<double>(velfac_shape);
+
+		inputs = {zero.data(), dx.data()};
+		outputs = {dx_local.data()};
+		run_broadcast_kernel("add1d", inputs, outputs, 
+			{1}, {Z,}, {Z-1},					//shapes
+			{0}, {0}, {0,},						//start index
+			{0}, {-1,}, {0,},					//negativ end index
+			devices, context, bins, q);	
+
+		std::cout << "dx local axis = 2: " << dx_local<<  std::endl;
+
+		xt::xarray<double> vel_pad_temp = xt::zeros<double>(vel_var_shape);
+		xt::xarray<double> var_pad_temp = xt::zeros<double>(vel_var_shape);
+		xt::xarray<double> mask_pad_temp = xt::zeros<double>(mask_shape);
+
+		inputs = {vel.data(), zero.data()};
+		outputs = {vel_pad_temp.data()};
+		run_broadcast_kernel("add3d", inputs, outputs, 
+			{X, Y, Z, 3}, {1,}, {X, Y, Z+2, 3},					//shapes
+			{0, 0, 0, 0}, {0}, {0, 0, 1, 0},						//start index
+			{0, 0, 0, -2}, {0}, {0, 0, -1, -2},					//negativ end index
+			devices, context, bins, q);	
+
+		vel_save = vel.data();
+
+		vel = xt::adapt(vel_pad_temp.data(), X*Y*(Z+2)*3, xt::no_ownership(), vel_var_shape); // vel now points to the data in vel_pad_temp. 
+
+		inputs = {var.data(), zero.data()};
+		outputs = {var_pad_temp.data()};
+		run_broadcast_kernel("add3d", inputs, outputs, 
+			{X, Y, Z, 3}, {1,}, {X, Y, Z+2, 3},					//shapes
+			{0, 0, 0, 0}, {0}, {0, 0, 1, 0},						//start index
+			{0, 0, 0, -2}, {0}, {0, 0, -1, -2},					//negativ end index
+			devices, context, bins, q);	
+
+		var_save = var.data();
+		var = xt::adapt(var_pad_temp.data(), X*Y*(Z+2)*3, xt::no_ownership(), vel_var_shape); // var now points to the data in var_pad_temp. 
+
+		inputs = {mask.data(), zero.data()};
+		outputs = {mask_pad_temp.data()};
+		run_broadcast_kernel("add3d", inputs, outputs, 
+			{X, Y, Z,}, {1,}, {X, Y, Z+2},					//shapes
+			{0, 0, 0,}, {0}, {0, 0, 1,},						//start index
+			{0, 0, 0,}, {0}, {0, 0, -1,},					//negativ end index
+			devices, context, bins, q);	
+
+		mask_save = mask.data();
+		mask = xt::adapt(mask_pad_temp.data(), X*Y*(Z+2), xt::no_ownership(), mask_shape); // mask now points to the data in mask_pad_temp. 
+	}
 
 	//start contain start index of the slices. in pyhpc benchark they are called sm1, s, sp1, sp2. starting index of s is then starts[1]
 
-	std::vector<int> intermediate_shape = {X-starts[1][0] + ends[1][0], Y - starts[1][1] + ends[1][1], Z - starts[1][2] + ends[1][2]};
 	xt::xarray<double> uCFL = xt::zeros<double>(intermediate_shape);
 	xt::xarray<double> rjp = xt::zeros<double>(intermediate_shape);
 	xt::xarray<double> rj = xt::zeros<double>(intermediate_shape);
@@ -785,10 +853,12 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	inputs = {velfac.data(), vel.data()};
 	outputs = {uCFL.data()};
 	run_broadcast_kernel("mult3d", inputs, outputs, 
-		velfac_shape, {X, Y, Z, 3}, intermediate_shape,					//shapes
+		velfac_shape, vel_var_shape, intermediate_shape,					//shapes
 		velfac_starts, starts[1], {0, 0, 0},						//start index
 		velfac_ends, ends[1], {0, 0, 0},					//negativ end index
 		devices, context, bins, q);	
+
+	std::cout << "tmp 1: " << xt::sum(uCFL) << std::endl;
 
 	inputs = {uCFL.data(), dx_local.data()};
 	outputs = {uCFL.data()};
@@ -797,6 +867,8 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//start index
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//negativ end index
 		devices, context, bins, q);
+	
+	std::cout << "tmp 1: " << xt::sum(uCFL) << std::endl;
 
 	inputs = {uCFL.data(), zero.data()}; //second input does nothing abs only takes one input. needs to be here because run broadcast kernel is shit
 	outputs = {uCFL.data()};
@@ -806,11 +878,15 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 		{0, 0, 0}, {0}, {0, 0, 0},					//negativ end index
 		devices, context, bins, q);
 
+	std::cout << "velfac sum: " << xt::sum(velfac) << std::endl;
+	std::cout << "dx (local) sum: " << xt::sum(dx_local) << std::endl;
+	std::cout << "uCFL sum: ()" << xt::sum(uCFL) << std::endl;
+
 	// rjp
 	inputs = {var.data(), var.data()};
 	outputs = {rjp.data()};
 	run_broadcast_kernel("sub3d", inputs, outputs, 
-		{X, Y, Z, 3}, {X, Y, Z, 3}, intermediate_shape,					//shapes
+		vel_var_shape, vel_var_shape, intermediate_shape,					//shapes
 		starts[3], starts[2], {0, 0, 0},						//start index
 		ends[3], ends[2], {0, 0, 0},					//negativ end index
 		devices, context, bins, q);
@@ -818,7 +894,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	inputs = {mask.data(), rjp.data()};
 	outputs = {rjp.data()};
 	run_broadcast_kernel("mult3d", inputs, outputs, 
-		{X, Y, Z,}, intermediate_shape, intermediate_shape,					//shapes
+		mask_shape, intermediate_shape, intermediate_shape,					//shapes
 		mask_starts[2], {0, 0, 0}, {0, 0, 0},						//start index
 		mask_ends[2], {0, 0, 0}, {0, 0, 0},					//negativ end index
 		devices, context, bins, q);
@@ -827,7 +903,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	inputs = {var.data(), var.data()};
 	outputs = {rj.data()};
 	run_broadcast_kernel("sub3d", inputs, outputs, 
-		{X, Y, Z, 3}, {X, Y, Z, 3}, intermediate_shape,					//shapes
+		vel_var_shape, vel_var_shape, intermediate_shape,					//shapes
 		starts[2], starts[1], {0, 0, 0},						//start index
 		ends[2], ends[1], {0, 0, 0},					//negativ end index
 		devices, context, bins, q);
@@ -835,7 +911,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	inputs = {mask.data(), rj.data()};
 	outputs = {rj.data()};
 	run_broadcast_kernel("mult3d", inputs, outputs, 
-		{X, Y, Z,}, intermediate_shape, intermediate_shape,					//shapes
+		mask_shape, intermediate_shape, intermediate_shape,					//shapes
 		mask_starts[1], {0, 0, 0}, {0, 0, 0},						//start index
 		mask_ends[1], {0, 0, 0}, {0, 0, 0},					//negativ end index
 		devices, context, bins, q);
@@ -844,7 +920,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	inputs = {var.data(), var.data()};
 	outputs = {rjm.data()};
 	run_broadcast_kernel("sub3d", inputs, outputs, 
-		{X, Y, Z, 3}, {X, Y, Z, 3}, intermediate_shape,					//shapes
+		vel_var_shape, vel_var_shape, intermediate_shape,					//shapes
 		starts[1], starts[0], {0, 0, 0},						//start index
 		ends[1], ends[0], {0, 0, 0},					//negativ end index
 		devices, context, bins, q);
@@ -852,7 +928,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	inputs = {mask.data(), rjm.data()};
 	outputs = {rjm.data()};
 	run_broadcast_kernel("mult3d", inputs, outputs, 
-		{X, Y, Z,}, intermediate_shape, intermediate_shape,					//shapes
+		mask_shape, intermediate_shape, intermediate_shape,					//shapes
 		mask_starts[0], {0, 0, 0}, {0, 0, 0},						//start index
 		mask_ends[0], {0, 0, 0}, {0, 0, 0},					//negativ end index
 		devices, context, bins, q);
@@ -863,7 +939,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	inputs = {vel.data(), zero.data()};
 	outputs = {selection.data()};
 	run_broadcast_kernel("gt3d", inputs, outputs, 
-		{X, Y, Z, 3}, {1}, {X, Y, Z, 3},					//shapes
+		vel_var_shape, {1}, vel_var_shape,					//shapes
 		starts[1], {0,}, starts[1],						//start index
 		ends[1], {0,}, ends[1],					//negativ end index
 		devices, context, bins, q);
@@ -871,7 +947,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	inputs = {selection.data(), rjm.data(), rjp.data()};
 	outputs = {cr.data()};
 	run_where_kernel("where3d", inputs, outputs, 
-		{X, Y, Z, 3}, intermediate_shape, intermediate_shape, intermediate_shape,					//shapes
+		vel_var_shape, intermediate_shape, intermediate_shape, intermediate_shape,					//shapes
 		starts[1], {0, 0, 0,}, {0, 0, 0,}, {0, 0, 0,}, 						//start index
 		ends[1], {0, 0, 0}, {0, 0, 0,}, {0, 0, 0,},					//negativ end index
 		devices, context, bins, q);
@@ -890,7 +966,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	inputs = {eps.data(), abs_rj.data()};
 	outputs = {selection.data()};
 	run_broadcast_kernel("gt3d", inputs, outputs, 
-		{1}, intermediate_shape, {X, Y, Z, 3},					//shapes
+		{1}, intermediate_shape, vel_var_shape,					//shapes
 		{0}, {0, 0, 0,}, starts[1],						//start index
 		{0,}, {0, 0, 0,}, ends[1],					//negativ end index
 		devices, context, bins, q);
@@ -898,7 +974,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	inputs = {selection.data(), eps.data(), rj.data()};
 	outputs = {selection.data()};
 	run_where_kernel("where3d", inputs, outputs, 
-		{X, Y, Z, 3}, {1}, intermediate_shape, {X, Y, Z, 3},					//shapes
+		vel_var_shape, {1}, intermediate_shape, vel_var_shape,					//shapes
 		starts[1], {0,}, {0, 0, 0,}, starts[1], 						//start index
 		ends[1], {0,}, {0, 0, 0,}, ends[1],					//negativ end index
 		devices, context, bins, q);
@@ -906,7 +982,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	inputs = {cr.data(), selection.data()};
 	outputs = {cr.data()};
 	run_broadcast_kernel("div3d", inputs, outputs, 
-		intermediate_shape, {X, Y, Z, 3}, intermediate_shape,					//shapes
+		intermediate_shape, vel_var_shape, intermediate_shape,					//shapes
 		{0, 0, 0}, starts[1], {0, 0, 0,}, 						//start index
 		{0, 0, 0}, ends[1], {0, 0, 0,},					//negativ end index
 		devices, context, bins, q);
@@ -988,13 +1064,10 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 		out_ends, out_ends, out_ends,					//negativ end index
 		devices, context, bins, q);
 
-	std::cout << "temp results... " << xt::sum(temp_out) << std::endl;
-
-
 	inputs = {velfac.data(), vel.data()}; 	//safe to reuse out again
 	outputs = {out.data()};
 	run_broadcast_kernel("mult3d", inputs, outputs, 
-		velfac_shape, {X, Y, Z, 3}, out_shape,					//shapes
+		velfac_shape, vel_var_shape, out_shape,					//shapes
 		velfac_starts, starts[1], out_starts, 						//start index
 		velfac_ends, ends[1], out_ends,					//negativ end index
 		devices, context, bins, q);
@@ -1034,7 +1107,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	inputs = {var.data(), var.data()};	//reuse temp to calculate other term
 	outputs = {temp_out.data()};
 	run_broadcast_kernel("add3d", inputs, outputs, 
-		{X, Y, Z ,3}, {X, Y, Z, 3}, out_shape,					//shapes
+		vel_var_shape, vel_var_shape, out_shape,					//shapes
 		starts[2], starts[1], out_starts, 						//start index
 		ends[2], ends[1], out_ends,					//negativ end index
 		devices, context, bins, q);
@@ -1042,7 +1115,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	inputs = {temp_out.data(), vel.data()};
 	outputs = {temp_out.data()};
 	run_broadcast_kernel("mult3d", inputs, outputs, 
-		out_shape, {X, Y, Z, 3}, out_shape,					//shapes
+		out_shape, vel_var_shape, out_shape,					//shapes
 		out_starts, starts[1], out_starts, 						//start index
 		out_ends, ends[1], out_ends,					//negativ end index
 		devices, context, bins, q);
@@ -1070,6 +1143,18 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 		out_starts, out_starts, out_starts, 						//start index
 		out_ends, out_ends, out_ends,					//negativ end index
 		devices, context, bins, q);
+
+/*	if (axis==2){
+		//remeber to swap back the pointers so we didnt mess up the main program memory.
+		std::cout << "swapping back pointers....";
+		std::vector<int> original_vel_var_shape = {X, Y, Z, 3};
+		std::vector<int> original_mask_shape = {X, Y, Z};
+		q.finish();
+
+		vel = xt::adapt(vel_save, X*Y*Z*3, xt::no_ownership(), original_vel_var_shape);
+		var = xt::adapt(var_save, X*Y*Z*3, xt::no_ownership(), original_vel_var_shape);
+		mask = xt::adapt(mask_save, X*Y*Z, xt::no_ownership(), original_mask_shape);
+	}*/
 }
 
 // Arguments parser
@@ -1861,8 +1946,52 @@ int main(int argc, const char *argv[])
 	adv_superbee(u, tke, maskUtr, dxt, 0, cost, cosu, 
 				flux_east, {X, Y, Z}, {1, 2, 0}, {-2 , -2, 0},  
 				devices, context, bins, q);
+
+	xt::xarray<double> maskVtr = xt::zeros_like(maskW);
+
+	inputs = {maskW.data(), maskW.data()}; 
+	outputs = {maskVtr.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X, Y, Z}, {X, Y, Z,}, {X, Y, Z,},					//shapes
+		{0, 1, 0}, {0, 0, 0,}, {0, 0, 0,},						//start index
+		{0, 0, 0}, {0, -1, 0}, {0, -1, 0},					//negativ end index
+		devices, context, bins, q);	
+
+	inputs = {zero.data(), zero.data()}; //reeeeally need assignment kernel...
+	outputs = {flux_north.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{1}, {1}, {X, Y, Z,},					//shapes
+		{0,}, {0,}, {0, 0, 0,},						//start index
+		{0,}, {0,}, {0, 0, 0},					//negativ end index
+		devices, context, bins, q);	
+
+	adv_superbee(v, tke, maskVtr, dyt, 1, cost, cosu, 
+				flux_north, {X, Y, Z}, {2, 1, 0}, {-2 , -2, 0},  
+				devices, context, bins, q);
+
+	xt::xarray<double> maskWtr = xt::zeros_like(maskW);
+
+	inputs = {maskW.data(), maskW.data()}; 
+	outputs = {maskWtr.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X, Y, Z}, {X, Y, Z,}, {X, Y, Z,},					//shapes
+		{0, 0, 1}, {0, 0, 0,}, {0, 0, 0,},						//start index
+		{0, 0, 0}, {0, 0, -1}, {0, 0, -1},					//negativ end index
+		devices, context, bins, q);	
+
+	inputs = {zero.data(), zero.data()}; //reeeeally need assignment kernel...
+	outputs = {flux_top.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{1}, {1}, {X, Y, Z,},					//shapes
+		{0,}, {0,}, {0, 0, 0,},						//start index
+		{0,}, {0,}, {0, 0, 0},					//negativ end index
+		devices, context, bins, q);	
+
+	adv_superbee(w, tke, maskWtr, dzw, 2, cost, cosu, 
+				flux_top, {X, Y, Z}, {2, 2, 0}, {-2 , -2, -1},  
+				devices, context, bins, q);
 	
-	// make rest of the advection stuff!
+	// axis==2 is having errors /w pointer hacks
 
 	std::cout << "sqrttke checksum: should be 1679...: " << xt::sum(sqrttke) << std::endl;
 	std::cout << "ks checksum: should be 377...: " << xt::sum(ks) << std::endl;
@@ -1889,8 +2018,11 @@ int main(int argc, const char *argv[])
 
 	std::cout << "flux east (8060969).. " << xt::sum(flux_east) << std::endl;
 	std::cout << "flux north (48331).. " << xt::sum(flux_north) << std::endl;
+	std::cout << "flux top (??).. " << xt::sum(flux_top) << std::endl;
 
 	std::cout << "maskUtr (2558)..: " << xt::sum(maskUtr) << std::endl;
+	std::cout << "maskVtr (2558)..: " << xt::sum(maskVtr) << std::endl;
+	std::cout << "maskWtr (2558)..: " << xt::sum(maskWtr) << std::endl;
 
 /*	for (int i=0; i<3136; i++){
 		std::cout << a_tri[i] << ", ";

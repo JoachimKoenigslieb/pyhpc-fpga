@@ -279,7 +279,9 @@ def _adv_superbee(vel, var, mask, dx, axis, cost, cosu, dt_tracer):
     rjm = (var[s] - var[sm1]) * mask[sm1]
     cr = limiter(_calc_cr(rjp, rj, rjm, vel[s]))
     
-    print('isnide adv func')
+    print(f'inside adv func. intmd shape is {uCFL.shape}')
+    print(f'velfac sum: {np.sum(velfac)}')
+    print(f'dx sum: {dx.sum()}')
     print(f'uCFL sum: {uCFL.sum()}')
     print(f'rjp sum: {rjp.sum()}')
     print(f'rj sum: {rj.sum()}')
@@ -287,20 +289,20 @@ def _adv_superbee(vel, var, mask, dx, axis, cost, cosu, dt_tracer):
     print(f'cr sum: {cr.sum()}')
     return velfac * vel[s] * (var[sp1] + var[s]) * 0.5 - np.abs(velfac * vel[s]) * ((1. - cr) + uCFL * cr) * rj * 0.5
 
-maskUtr = np.zeros_like(maskW)
-maskUtr[:-1, :, :] = maskW[1:, :, :] * maskW[:-1, :, :]
-flux_east[...] = 0.
-flux_east[1:-2, 2:-2, :] = _adv_superbee(u[..., tau], tke[:, :, :, tau], maskUtr, dxt, 0, cost, cosu, dt_tracer)
+# maskUtr = np.zeros_like(maskW)
+# maskUtr[:-1, :, :] = maskW[1:, :, :] * maskW[:-1, :, :]
+# flux_east[...] = 0.
+# flux_east[1:-2, 2:-2, :] = _adv_superbee(u[..., tau], tke[:, :, :, tau], maskUtr, dxt, 0, cost, cosu, dt_tracer)
 
 # maskVtr = np.zeros_like(maskW)
 # maskVtr[:, :-1, :] = maskW[:, 1:, :] * maskW[:, :-1, :]
 # flux_north[...] = 0.
 # flux_north[2:-2, 1:-2, :] = _adv_superbee(v[..., tau], tke[:, :, :, tau], maskVtr, dyt, 1, cost, cosu, dt_tracer)
 
-# maskWtr = np.zeros_like(maskW)
-# maskWtr[:, :, :-1] = maskW[:, :, 1:] * maskW[:, :, :-1]
-# flux_top[...] = 0.
-# flux_top[2:-2, 2:-2, :-1] = _adv_superbee(w[..., tau], tke[:, :, :, tau], maskWtr, dzw, 2, cost, cosu, dt_tracer)
+maskWtr = np.zeros_like(maskW)
+maskWtr[:, :, :-1] = maskW[:, :, 1:] * maskW[:, :, :-1]
+flux_top[...] = 0.
+flux_top[2:-2, 2:-2, :-1] = _adv_superbee(w[..., tau], tke[:, :, :, tau], maskWtr, dzw, 2, cost, cosu, dt_tracer)
 
 print(f'sqrttke checksum: {sqrttke.sum()}')
 print(f'delta checksum: {delta.sum()}')
@@ -313,6 +315,6 @@ print(f'tke checksum: {tke.sum()}')
 print(f'tke_ surf corr checksum: {tke_surf_corr.sum()}')
 print(f'flux_east checksum: {flux_east.sum()}')
 print(f'flux_north checksum: {flux_north.sum()}')
-
+print(f'flux_top checksum: {flux_top.sum()}')
 
 (cost * dyt)[np.newaxis, 1:-2, np.newaxis]
