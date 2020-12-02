@@ -16,10 +16,10 @@
 
 #include "xf_solver_L2.hpp"
 
-#define NRC 3136
+#define NRC 4096
 #define NCU 1
 
-extern "C" void gtsv(int n, double* matDiagLow, double* matDiag, double* matDiagUp, double* rhs) {
+extern "C" void gtsv4096(int n, double* matDiagLow, double* matDiag, double* matDiagUp, double* rhs) {
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem0 port = matDiagLow latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
 

@@ -9,6 +9,7 @@
 #include "xtensor/xnpy.hpp"
 #include "xtensor/xview.hpp"
 #include "xtensor/xio.hpp"
+#include "xtensor/xadapt.hpp"
 
 #include "xcl2.cpp"
 
@@ -172,7 +173,6 @@ std::vector<int> zero_on_squeeze(std::vector<int> view_shape, std::vector<int> A
 	return new_A;
 }
 
-
 int collect_linear_offset(std::vector<int> view_shape, std::vector<int> stride, std::vector<int> offset){
 	int dims = view_shape.size();
 	int lin_offset=0;
@@ -206,7 +206,6 @@ std::vector<int> rebuild_offset(std::vector<int> offset, std::vector<int> view_s
 	std::vector<int> new_offset = sub_vecs(filtered_offset, out_offset);
 	return new_offset;
 }
-
 
 void negotiate_strides(	std::vector<int> A_shape, std::vector<int> &out_shape, 
 					std::vector<int> &A_offset, std::vector<int> &out_offset,
@@ -249,6 +248,14 @@ void negotiate_strides(	std::vector<int> A_shape, std::vector<int> &out_shape,
 
 	A_lin_offset_res = A_lin_offset;
 	out_lin_offset_res = out_lin_offset;
+}
+
+int next_largets_factor_2(int n){
+	int factor_2 = 1;  
+	while (factor_2 < n){
+		factor_2 *= 2;
+	}
+	return factor_2;
 }
 
 void run_broadcast_kernel(std::string kernel_name,
@@ -427,73 +434,103 @@ void run_broadcast_kernel(std::string kernel_name,
 	}
 }
 
-void run_gtsv(std::string kernel_name, int kernel_size, std::vector<double *> &inputs, std::vector<cl::Device> &devices, cl::Context &context, cl::Program::Binaries &bins, cl::CommandQueue &q)
+void run_gtsv(int kernel_size, std::vector<double *> &inputs, std::vector<cl::Device> &devices, cl::Context &context, cl::Program::Binaries &bins, cl::CommandQueue &q)
 {
-        // this is a helper function to execute a kernel.
-        {
-                cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
-                cl::Kernel kernel(program, kernel_name.data());
+	// tridiagnals are taken to be equal length. We intepret upper and lower diagonals such that the extra index is a zero by writng that memory to zero. 
+	int N_pow_2 = next_largets_factor_2(kernel_size); // For some reason, gtsv kernel only works when its powers of two sized input. We are going to zero pad!
+	std::string kernel_name = "gtsv" + std::to_string(N_pow_2);
 
-                 // DDR Settings
-		std::vector<cl_mem_ext_ptr_t> mext_io(4);
-		mext_io[0].flags = XCL_MEM_DDR_BANK0;
-		mext_io[1].flags = XCL_MEM_DDR_BANK0;
-		mext_io[2].flags = XCL_MEM_DDR_BANK0;
-		mext_io[3].flags = XCL_MEM_DDR_BANK0;
+	std::cout << "Running kernel: " << kernel_name << std::endl;
 
-		mext_io[0].obj = inputs[0];
-		mext_io[0].param = 0;
-		mext_io[1].obj = inputs[1];
-		mext_io[1].param = 0;
-		mext_io[2].obj = inputs[2];
-		mext_io[2].param = 0;
-		mext_io[3].obj = inputs[3];
-		mext_io[3].param = 0;
+	cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
+	cl::Kernel kernel(program, kernel_name.data());
 
-		// Create device buffer and map dev buf to host buf
-		cl::Buffer matdiaglow_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
-										sizeof(double) * kernel_size, &mext_io[0]);
-		cl::Buffer matdiag_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
-									sizeof(double) * kernel_size, &mext_io[1]);
-		cl::Buffer matdiagup_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
-										sizeof(double) * kernel_size, &mext_io[2]);
-		cl::Buffer rhs_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
-								sizeof(double) * kernel_size, &mext_io[3]);
+	// DDR Settings
+	std::vector<cl_mem_ext_ptr_t> mext_io(4);
+	mext_io[0].flags = XCL_MEM_DDR_BANK0;
+	mext_io[1].flags = XCL_MEM_DDR_BANK0;
+	mext_io[2].flags = XCL_MEM_DDR_BANK0;
+	mext_io[3].flags = XCL_MEM_DDR_BANK0;
 
-		// Data transfer from host buffer to device buffer
-		std::vector<std::vector<cl::Event> > kernel_evt(2);
-		kernel_evt[0].resize(1);
-		kernel_evt[1].resize(1);
+	inputs[0][0] = 0; 	//on a tri-diagonal matrix, upper and lower diagonals have n-1 entries. We zero them like this to fit gtsv kernel convetion
+	inputs[2][kernel_size - 1] = 0;
 
-		std::vector<cl::Memory> ob_in, ob_out;
-		ob_in.push_back(matdiaglow_buffer);
-		ob_in.push_back(matdiag_buffer);
-		ob_in.push_back(matdiagup_buffer);
-		ob_in.push_back(rhs_buffer);
+	double* a_tri_padded = aligned_alloc<double>(N_pow_2);
+	double* b_tri_padded = aligned_alloc<double>(N_pow_2);
+	double* c_tri_padded = aligned_alloc<double>(N_pow_2);
+	double* d_tri_padded = aligned_alloc<double>(N_pow_2);
 
-		ob_out.push_back(rhs_buffer);
+	double *a_tri = inputs[0];
+	double *b_tri = inputs[1];
+	double *c_tri = inputs[2];
+	double *d_tri = inputs[3];
 
-		q.enqueueMigrateMemObjects(ob_in, 0, nullptr, &kernel_evt[0][0]); // 0 : migrate from host to dev
-		q.finish();
-		std::cout << "INFO: Finish data transfer from host to device" << std::endl;
+	for (int i = 0; i<kernel_size; i++){
+		a_tri_padded[i] = a_tri[i];
+		b_tri_padded[i] = b_tri[i];
+		c_tri_padded[i] = c_tri[i];
+		d_tri_padded[i] = d_tri[i];
 
+	}
+	for (int i = kernel_size; i<N_pow_2; i++){
+		a_tri_padded[i] = 0;
+		b_tri_padded[i] = 1; // i think this helps with stability,
+		c_tri_padded[i] = 0;
+		d_tri_padded[i] = 0;
+	}
 
-		// Setup kernel
-		kernel.setArg(0, kernel_size);
-		kernel.setArg(1, matdiaglow_buffer);
-		kernel.setArg(2, matdiag_buffer);
-		kernel.setArg(3, matdiagup_buffer);
-		kernel.setArg(4, rhs_buffer);
-		q.finish();
-		std::cout << "INFO: Finish kernel setup" << std::endl;
+	mext_io[0].obj = a_tri_padded;
+	mext_io[0].param = 0;
+	mext_io[1].obj = b_tri_padded;
+	mext_io[1].param = 0;
+	mext_io[2].obj = c_tri_padded;
+	mext_io[2].param = 0;
+	mext_io[3].obj = d_tri_padded;
+	mext_io[3].param = 0;
 
-		q.enqueueTask(kernel, nullptr, nullptr);
-		q.finish();
-		q.enqueueMigrateMemObjects(ob_out, 1, nullptr, nullptr); // 1 : migrate from dev to host
-		q.finish();
+	// Create device buffer and map dev buf to host buf
+	cl::Buffer matdiaglow_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
+									sizeof(double) * N_pow_2, &mext_io[0]);
+	cl::Buffer matdiag_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
+								sizeof(double) * N_pow_2, &mext_io[1]);
+	cl::Buffer matdiagup_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
+									sizeof(double) * N_pow_2, &mext_io[2]);
+	cl::Buffer rhs_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
+							sizeof(double) * N_pow_2, &mext_io[3]);
 
+	// Data transfer from host buffer to device buffer
+	std::vector<std::vector<cl::Event> > kernel_evt(2);
+	kernel_evt[0].resize(1);
+	kernel_evt[1].resize(1);
 
-		}
+	std::vector<cl::Memory> ob_in, ob_out;
+	ob_in.push_back(matdiaglow_buffer);
+	ob_in.push_back(matdiag_buffer);
+	ob_in.push_back(matdiagup_buffer);
+	ob_in.push_back(rhs_buffer);
+	ob_out.push_back(rhs_buffer);
+
+	q.enqueueMigrateMemObjects(ob_in, 0, nullptr, &kernel_evt[0][0]); // 0 : migrate from host to dev
+	q.finish();
+	std::cout << "INFO: Finish data transfer from host to device" << std::endl;
+
+	// Setup kernel
+	kernel.setArg(0, N_pow_2);
+	kernel.setArg(1, matdiaglow_buffer);
+	kernel.setArg(2, matdiag_buffer);
+	kernel.setArg(3, matdiagup_buffer);
+	kernel.setArg(4, rhs_buffer);
+	q.finish();
+	std::cout << "INFO: Finish kernel setup" << std::endl;
+
+	q.enqueueTask(kernel, nullptr, nullptr);
+	q.finish();
+	q.enqueueMigrateMemObjects(ob_out, 1, nullptr, nullptr); // 1 : migrate from dev to host
+	q.finish();
+
+	for (int i=0; i<kernel_size; i++){ // put the solution from the padded output of kernel into working memeory
+		d_tri[i] = d_tri_padded[i];
+	}
 }
 
 void run_where_kernel(std::string kernel_name, 
@@ -708,6 +745,10 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	double *vel_save, *var_save, *mask_save; // save the pointer locations so we can swap back l8er
 
+	xt::xarray<double> vel_pad_temp;
+	xt::xarray<double> var_pad_temp;
+	xt::xarray<double> mask_pad_temp;
+	
 	if (axis==0){
 		for (int n=-1; n<3; n++){
 			starts.push_back({1 + n, 2, 0, 0});
@@ -800,11 +841,9 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 			{0}, {-1,}, {0,},					//negativ end index
 			devices, context, bins, q);	
 
-		std::cout << "dx local axis = 2: " << dx_local<<  std::endl;
-
-		xt::xarray<double> vel_pad_temp = xt::zeros<double>(vel_var_shape);
-		xt::xarray<double> var_pad_temp = xt::zeros<double>(vel_var_shape);
-		xt::xarray<double> mask_pad_temp = xt::zeros<double>(mask_shape);
+		vel_pad_temp = xt::zeros<double>(vel_var_shape);
+		var_pad_temp = xt::zeros<double>(vel_var_shape);
+		mask_pad_temp = xt::zeros<double>(mask_shape);
 
 		inputs = {vel.data(), zero.data()};
 		outputs = {vel_pad_temp.data()};
@@ -814,9 +853,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 			{0, 0, 0, -2}, {0}, {0, 0, -1, -2},					//negativ end index
 			devices, context, bins, q);	
 
-		vel_save = vel.data();
-
-		vel = xt::adapt(vel_pad_temp.data(), X*Y*(Z+2)*3, xt::no_ownership(), vel_var_shape); // vel now points to the data in vel_pad_temp. 
+		std::swap(vel_pad_temp, vel);
 
 		inputs = {var.data(), zero.data()};
 		outputs = {var_pad_temp.data()};
@@ -826,8 +863,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 			{0, 0, 0, -2}, {0}, {0, 0, -1, -2},					//negativ end index
 			devices, context, bins, q);	
 
-		var_save = var.data();
-		var = xt::adapt(var_pad_temp.data(), X*Y*(Z+2)*3, xt::no_ownership(), vel_var_shape); // var now points to the data in var_pad_temp. 
+		std::swap(var_pad_temp, var);
 
 		inputs = {mask.data(), zero.data()};
 		outputs = {mask_pad_temp.data()};
@@ -837,8 +873,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 			{0, 0, 0,}, {0}, {0, 0, -1,},					//negativ end index
 			devices, context, bins, q);	
 
-		mask_save = mask.data();
-		mask = xt::adapt(mask_pad_temp.data(), X*Y*(Z+2), xt::no_ownership(), mask_shape); // mask now points to the data in mask_pad_temp. 
+		std::swap(mask_pad_temp, mask);
 	}
 
 	//start contain start index of the slices. in pyhpc benchark they are called sm1, s, sp1, sp2. starting index of s is then starts[1]
@@ -858,8 +893,6 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 		velfac_ends, ends[1], {0, 0, 0},					//negativ end index
 		devices, context, bins, q);	
 
-	std::cout << "tmp 1: " << xt::sum(uCFL) << std::endl;
-
 	inputs = {uCFL.data(), dx_local.data()};
 	outputs = {uCFL.data()};
 	run_broadcast_kernel("div3d", inputs, outputs, 
@@ -868,8 +901,6 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//negativ end index
 		devices, context, bins, q);
 	
-	std::cout << "tmp 1: " << xt::sum(uCFL) << std::endl;
-
 	inputs = {uCFL.data(), zero.data()}; //second input does nothing abs only takes one input. needs to be here because run broadcast kernel is shit
 	outputs = {uCFL.data()};
 	run_broadcast_kernel("abs3d", inputs, outputs, 
@@ -877,10 +908,6 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 		{0, 0, 0}, {0}, {0, 0, 0},						//start index
 		{0, 0, 0}, {0}, {0, 0, 0},					//negativ end index
 		devices, context, bins, q);
-
-	std::cout << "velfac sum: " << xt::sum(velfac) << std::endl;
-	std::cout << "dx (local) sum: " << xt::sum(dx_local) << std::endl;
-	std::cout << "uCFL sum: ()" << xt::sum(uCFL) << std::endl;
 
 	// rjp
 	inputs = {var.data(), var.data()};
@@ -1030,13 +1057,6 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 		{0, 0, 0}, {0,}, {0, 0, 0,},					//negativ end index
 		devices, context, bins, q);
 
-	std::cout << "Inside advection func... \n";
-	std::cout << "uCFL sum: (57965)" << xt::sum(uCFL) << std::endl;
-	std::cout << "rjp sum: (-2)" << xt::sum(rjp) << std::endl;
-	std::cout << "rj sum: (22.8)" << xt::sum(rj) << std::endl;
-	std::cout << "rjm sum: (10.09)" << xt::sum(rjm) << std::endl;
-	std::cout << "cr sum: (1028.7)" << xt::sum(cr) << std::endl;
-
 	//compute out value.
 	xt::xarray<double> temp_out = xt::zeros_like(out);
 
@@ -1144,17 +1164,13 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 		out_ends, out_ends, out_ends,					//negativ end index
 		devices, context, bins, q);
 
-/*	if (axis==2){
+	if (axis==2){
 		//remeber to swap back the pointers so we didnt mess up the main program memory.
-		std::cout << "swapping back pointers....";
-		std::vector<int> original_vel_var_shape = {X, Y, Z, 3};
-		std::vector<int> original_mask_shape = {X, Y, Z};
-		q.finish();
 
-		vel = xt::adapt(vel_save, X*Y*Z*3, xt::no_ownership(), original_vel_var_shape);
-		var = xt::adapt(var_save, X*Y*Z*3, xt::no_ownership(), original_vel_var_shape);
-		mask = xt::adapt(mask_save, X*Y*Z, xt::no_ownership(), original_mask_shape);
-	}*/
+		std::swap(vel, vel_pad_temp);
+		std::swap(var, var_pad_temp);
+		std::swap(mask, mask_pad_temp);
+	}
 }
 
 // Arguments parser
@@ -1252,19 +1268,10 @@ int main(int argc, const char *argv[])
 	xt::xarray<double> one = xt::ones<double>({1});
 	xt::xarray<double> zero = xt::zeros<double>({1});
 	xt::xarray<double> half = xt::ones<double>({1}) * 0.5;
+	xt::xarray<double> three_halfs = xt::ones<double>({1}) * 1.5;
+
 	xt::xarray<double> two = xt::ones<double>({1}) * 2;
 	xt::xarray<double> K_h_tke = xt::ones<double>({1}) * 2000;
-
-
-	/*
-	inputs = {forc.data(), zero.data()};
-	outputs = {forc.data()};
-	run_broadcast_kernel("abs3d", inputs, outputs, 
-		{X, Y, Z}, {1}, {X, Y, Z},			//shapes
-		{0, 0, 0}, {0}, {0, 0, 0},			//start index
-		{0, 0 ,0}, {0}, {0, 0, 0}, 			//negativ end index
-		devices, context, bins, q);
-	*/
 
 	//kbot
 	inputs = {kbot.data(), one.data()};
@@ -1528,10 +1535,6 @@ int main(int argc, const char *argv[])
 		devices, context, bins, q);
 
 	xt::xarray<double> d_tri_tmp = xt::zeros_like(d_tri);
-	std::cout << "d_tri tmp 0 (should be zero!)" << xt::sum(d_tri_tmp) << std::endl;
-
-	xt::xarray<double> test_tmp = xt::zeros<double>({28, 28});
-
 
 	inputs = {forc_tke_surface.data(), dzw.data() };
 	outputs = {d_tri_tmp.data()};
@@ -1540,7 +1543,6 @@ int main(int argc, const char *argv[])
 		{2, 2,}, {Z-1}, {0, 0, Z-1},					//start index
 		{-2, -2,}, {0}, {0, 0, 0},						//negativ end index
 		devices, context, bins, q);
-	std::cout << "d_tri tmp 1 (should be 27)" << xt::sum(d_tri_tmp) << std::endl;
 	
 	inputs = {d_tri_tmp.data(), two.data() };
 	outputs = {d_tri_tmp.data()};
@@ -1667,7 +1669,7 @@ int main(int argc, const char *argv[])
 
 
 	//prepare inputs for gtsv
-	inputs = {a_tri.data(), zero.data()}; //This is such a hack.. We need to write and assignment kernel also!
+	inputs = {a_tri.data(), zero.data()}; //This is such a hack.. We need to write an assignment kernel also!
 	outputs = {a_tri.data()};
 	run_broadcast_kernel("mult2d", inputs, outputs, 
 		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
@@ -1675,7 +1677,7 @@ int main(int argc, const char *argv[])
 		{0, 0, -Z+1}, {0,}, {0, 0, -Z+1},						//negativ end index
 		devices, context, bins, q);
 
-	inputs = {c_tri.data(), zero.data()}; //This is such a hack.. We need to write and assignment kernel also!
+	inputs = {c_tri.data(), zero.data()}; //This is such a hack.. We need to write an assignment kernel also!
 	outputs = {c_tri.data()};
 	run_broadcast_kernel("mult2d", inputs, outputs, 
 		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
@@ -1683,13 +1685,8 @@ int main(int argc, const char *argv[])
 		{0, 0, 0}, {0,}, {0, 0, 0},						//negativ end index
 		devices, context, bins, q);
 
-	a_tri[0] = 0; 	//on a tri-diagonal matrix, upper and lower diagonals have n-1 entries. We zero them like this to fit gtsv kernel convetion
-	c_tri[(X-4)*(Y-4)*Z - 1] = 0;
-
-	
 	inputs = {a_tri.data(), b_tri.data(), c_tri.data(), d_tri.data()};
-	run_gtsv("gtsv", (X-4)*(Y-4)*Z, inputs, devices, context, bins, q); //this outputs ans into d_tri (xilinx solver kernel choice, not mine)
-
+	run_gtsv((X-4)*(Y-4)*Z, inputs, devices, context, bins, q); //this outputs ans into d_tri (xilinx solver kernel choice, not mine)
 	
 	inputs = {water_mask.data(), d_tri.data(), tke.data()};
 	outputs = {tke.data()};
@@ -1991,7 +1988,182 @@ int main(int argc, const char *argv[])
 				flux_top, {X, Y, Z}, {2, 2, 0}, {-2 , -2, -1},  
 				devices, context, bins, q);
 	
-	// axis==2 is having errors /w pointer hacks
+
+	//dtke
+	xt::xarray<double> dtke_temp = xt::zeros_like(dtke);
+
+	inputs = {flux_east.data(), flux_east.data()}; 
+	outputs = {dtke.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{X, Y, Z}, {X, Y, Z}, {X, Y, Z, 3},					//shapes
+		{1, 2, 0,}, {2, 2, 0,}, {2, 2, 0, 0},						//start index
+		{-3, -2, 0,}, {-2, -2, 0}, {-2, -2, 0, -2},					//negativ end index
+		devices, context, bins, q);			
+
+	inputs = {dtke.data(), cost.data()}; 
+	outputs = {dtke.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X, Y, Z, 3}, {1, X, 1}, {X, Y, Z, 3},					//shapes
+		{2, 2, 0, 0}, {0, 2, 0}, {2, 2, 0, 0} ,						//start index
+		{-2, -2, 0, -2}, {0, -2, 0}, {-2, -2, 0, -2},					//negativ end index
+		devices, context, bins, q);		
+
+	inputs = {dtke.data(), dxt.data()}; 
+	outputs = {dtke.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X, Y, Z, 3}, {X, 1, 1}, {X, Y, Z, 3},					//shapes
+		{2, 2, 0, 0}, {2, 0, 0}, {2, 2, 0, 0} ,						//start index
+		{-2, -2, 0, -2}, {-2, 0, 0}, {-2, -2, 0, -2},					//negativ end index
+		devices, context, bins, q);		
+		
+	inputs = {flux_north.data(), flux_north.data()}; 
+	outputs = {dtke_temp.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{X, Y, Z}, {X, Y, Z}, {X, Y, Z, 3},					//shapes
+		{2, 2 ,0,}, {2, 1, 0,}, {2, 2, 0, 0},						//start index
+		{-2, -2, 0}, {-2, -3, 0}, {-2, -2, 0, -2},					//negativ end index
+		devices, context, bins, q);		
+
+	inputs = {dtke_temp.data(), cost.data()}; 
+	outputs = {dtke_temp.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X, Y, Z, 3}, {1, X, 1}, {X, Y, Z, 3},					//shapes
+		{2, 2, 0, 0}, {0, 2, 0}, {2, 2, 0, 0} ,						//start index
+		{-2, -2, 0, -2}, {0, -2, 0}, {-2, -2, 0, -2},					//negativ end index
+		devices, context, bins, q);		
+
+	inputs = {dtke_temp.data(), dyt.data()}; 
+	outputs = {dtke_temp.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X, Y, Z, 3}, {1, Y, 1}, {X, Y, Z, 3},					//shapes
+		{2, 2, 0, 0}, {0, 2, 0}, {2, 2, 0, 0} ,						//start index
+		{-2, -2, 0, -2}, {0, -2, 0}, {-2, -2, 0, -2},					//negativ end index
+		devices, context, bins, q);		
+		
+	inputs = {dtke.data(), dtke_temp.data()}; 
+	outputs = {dtke.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{X, Y, Z, 3}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
+		{2, 2, 0, 0}, {2, 2, 0, 0}, {2, 2, 0, 0} ,						//start index
+		{-2, -2, 0, -2}, {-2, -2, 0, -2}, {-2, -2, 0, -2},					//negativ end index
+		devices, context, bins, q);	
+
+	inputs = {dtke.data(), maskW.data()}; 
+	outputs = {dtke.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{X, Y, Z, 3}, {X, Y, Z,}, {X, Y, Z, 3},					//shapes
+		{2, 2, 0, 0}, {2, 2, 0,}, {2, 2, 0, 0} ,						//start index
+		{-2, -2, 0, -2}, {-2, -2, 0,}, {-2, -2, 0, -2},					//negativ end index
+		devices, context, bins, q);			
+	
+	inputs = {flux_top.data(), dzw.data()}; 
+	outputs = {dtke_temp.data()};
+	run_broadcast_kernel("div2d", inputs, outputs, 
+		{X, Y, Z,}, {Z,}, {X, Y, Z, 3},					//shapes
+		{0, 0, 0,}, {0,}, {0, 0, 0, 0} ,						//start index
+		{0, 0, -Z+1,}, {-Z+1,}, {0, 0, -Z+1, -2},					//negativ end index
+		devices, context, bins, q);			
+
+	inputs = {dtke.data(), dtke_temp.data()}; 
+	outputs = {dtke.data()};
+	run_broadcast_kernel("sub2d", inputs, outputs, 
+		{X, Y, Z, 3}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
+		{0, 0, 0, 0}, {0, 0, 0 ,0}, {0, 0, 0, 0} ,						//start index
+		{0, 0, -Z+1, -2}, {0, 0, -Z+1, -2}, {0, 0, -Z+1, -2},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {flux_top.data(), flux_top.data()}; 
+	outputs = {dtke_temp.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{X, Y, Z,}, {X, Y, Z,}, {X, Y, Z, 3},					//shapes
+		{0, 0, 0,}, {0, 0, 1}, {0, 0, 1, 0} ,						//start index
+		{0, 0, -2,}, {0, 0, -1,}, {0, 0, -1, -2},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {dtke_temp.data(), dzw.data()}; 
+	outputs = {dtke_temp.data()};
+	run_broadcast_kernel("div3d", inputs, outputs, 
+		{X, Y, Z, 3}, {Z,}, {X, Y, Z, 3},					//shapes
+		{0, 0, 1, 0,}, {1}, {0, 0, 1, 0} ,						//start index
+		{0, 0, -1, -2,}, {-1,}, {0, 0, -1, -2},					//negativ end index
+		devices, context, bins, q);	
+
+	inputs = {dtke.data(), dtke_temp.data()}; 
+	outputs = {dtke.data()};
+	run_broadcast_kernel("add3d", inputs, outputs, 
+		{X, Y, Z, 3}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
+		{0, 0, 1, 0}, {0, 0, 1 ,0}, {0, 0, 1, 0} ,						//start index
+		{0, 0, -1, -2}, {0, 0, -1, -2}, {0, 0, -1, -2},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {flux_top.data(), flux_top.data()}; 
+	outputs = {dtke_temp.data()};
+	run_broadcast_kernel("sub2d", inputs, outputs, 
+		{X, Y, Z,}, {X, Y, Z,}, {X, Y, Z, 3},					//shapes
+		{0, 0, Z-2,}, {0, 0, Z-1}, {0, 0, Z-1, 0} ,						//start index
+		{0, 0, -1,}, {0, 0, 0,}, {0, 0, 0, -2},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {dtke_temp.data(), dzw.data()}; 
+	outputs = {dtke_temp.data()};
+	run_broadcast_kernel("div2d", inputs, outputs, 
+		{X, Y, Z, 3}, {Z,}, {X, Y, Z, 3},					//shapes
+		{0, 0, Z-1, 0,}, {Z-1}, {0, 0, Z-1, 0} ,						//start index
+		{0, 0, 0, -2,}, {0, }, {0, 0, 0, -2},					//negativ end index
+		devices, context, bins, q);	
+
+	inputs = {dtke_temp.data(), two.data()}; 
+	outputs = {dtke_temp.data()};
+	run_broadcast_kernel("mult2d", inputs, outputs, 
+		{X, Y, Z, 3}, {1,}, {X, Y, Z, 3},					//shapes
+		{0, 0, Z-1, 0,}, {0}, {0, 0, Z-1, 0} ,						//start index
+		{0, 0, 0, -2,}, {0, }, {0, 0, 0, -2},					//negativ end index
+		devices, context, bins, q);	
+
+	inputs = {dtke.data(), dtke_temp.data()}; 
+	outputs = {dtke.data()};
+	run_broadcast_kernel("add2d", inputs, outputs, 
+		{X, Y, Z, 3}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
+		{0, 0, Z-1, 0}, {0, 0, Z-1 ,0}, {0, 0, Z-1, 0} ,						//start index
+		{0, 0, 0, -2}, {0, 0, 0, -2}, {0, 0, 0, -2},					//negativ end index
+		devices, context, bins, q);
+
+	//Tke (note, we actually have a tke tmep from earlier!)
+
+	xt::xarray<double> three_halves_plus_AB_eps = xt::ones<double>({1}) * (1.5 + 0.1);
+	xt::xarray<double> one_halves_plus_AB_eps = xt::ones<double>({1}) * (0.5 + 0.1);
+
+	inputs = {three_halves_plus_AB_eps.data(), dtke.data()}; 
+	outputs = {tke_temp.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{1,}, {X, Y, Z, 3}, {X, Y, Z,},					//shapes
+		{0,}, {0, 0, 0, 0}, {0, 0, 0,} ,						//start index
+		{0,}, {0, 0, 0, -2}, {0, 0, 0,},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {tke_temp.data(), tke.data()}; 
+	outputs = {tke.data()};
+	run_broadcast_kernel("add3d", inputs, outputs, 
+		{X, Y, Z,}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
+		{0, 0, 0,}, {0, 0, 0, 1}, {0, 0, 0, 1} ,						//start index
+		{0, 0, 0,}, {0, 0, 0, -1}, {0, 0, 0, -1},					//negativ end index
+		devices, context, bins, q);
+
+	inputs = {one_halves_plus_AB_eps.data(), dtke.data()}; 
+	outputs = {tke_temp.data()};
+	run_broadcast_kernel("mult3d", inputs, outputs, 
+		{1,}, {X, Y, Z, 3}, {X, Y, Z,},					//shapes
+		{0,}, {0, 0, 0, 2}, {0, 0, 0,} ,						//start index
+		{0,}, {0, 0, 0, 0}, {0, 0, 0},					//negativ end index
+		devices, context, bins, q);
+	
+	inputs = {tke_temp.data(), tke.data()}; 
+	outputs = {tke.data()};
+	run_broadcast_kernel("sub3d", inputs, outputs, 
+		{X, Y, Z,}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
+		{0, 0, 0}, {0, 0, 0, 1}, {0, 0, 0, 1} ,						//start index
+		{0, 0, 0}, {0, 0, 0, -1}, {0, 0, 0, -1},					//negativ end index
+		devices, context, bins, q);
 
 	std::cout << "sqrttke checksum: should be 1679...: " << xt::sum(sqrttke) << std::endl;
 	std::cout << "ks checksum: should be 377...: " << xt::sum(ks) << std::endl;
@@ -2018,37 +2190,13 @@ int main(int argc, const char *argv[])
 
 	std::cout << "flux east (8060969).. " << xt::sum(flux_east) << std::endl;
 	std::cout << "flux north (48331).. " << xt::sum(flux_north) << std::endl;
-	std::cout << "flux top (??).. " << xt::sum(flux_top) << std::endl;
+	std::cout << "flux top (-20.9) " << xt::sum(flux_top) << std::endl;
 
 	std::cout << "maskUtr (2558)..: " << xt::sum(maskUtr) << std::endl;
 	std::cout << "maskVtr (2558)..: " << xt::sum(maskVtr) << std::endl;
 	std::cout << "maskWtr (2558)..: " << xt::sum(maskWtr) << std::endl;
 
-/*	for (int i=0; i<3136; i++){
-		std::cout << a_tri[i] << ", ";
-	}
-
-	std::cout << "\n";
-
-	for (int i=0; i<3136; i++){
-		std::cout << b_tri[i] << ", ";
-	}
-
-	std::cout << "\n";
-
-	for (int i=0; i<3136; i++){
-		std::cout << c_tri[i] << ", ";
-	}
-
-	std::cout << "\n";
-
-	for (int i=0; i<3136; i++){
-		std::cout << d_tri[i] << ", ";
-	}
-
-	std::cout << "\n";
-
-*/
+	std::cout << "dtke (-600012) " << xt::sum(dtke) << std::endl;
 
 	return 0;
 }
