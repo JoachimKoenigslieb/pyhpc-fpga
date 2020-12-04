@@ -2,8 +2,10 @@
 *.xo
 *.xclbin*
 *compile_summary
-build/_x
-build/.run
-build/.Xil
+**/_x/
+**/.run/
+**/.Xil/
 *settings*
-./build/host
+host
+**/dump
+*.vscode
