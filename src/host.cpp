@@ -17,6 +17,7 @@
 #define Y 32
 #define Z 4
 
+
 using namespace xt::placeholders; //enables xt::range(1, _) syntax. eqiv. to [1:] syntax in numpy 
 
 
@@ -275,163 +276,131 @@ void run_broadcast_kernel(std::string kernel_name,
 							cl::Program::Binaries &bins,
 							cl::CommandQueue &q)
 {
-	// this is a helper function to execute a kernel.
-	{
-		//setup program and kernel:
-		cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
-		cl::Kernel kernel(program, kernel_name.data());
-		std::cout << "INFO: Kernel '" << kernel_name << "' has been created" << std::endl;
+	//setup program and kernel:
+	cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
+	cl::Kernel kernel(program, kernel_name.data());
+	std::cout << "INFO: Kernel '" << kernel_name << "' has been created" << std::endl;
 
-		int num_in = 2;
-		int dimensions;
+	int num_in = 2;
+	int dimensions;
 
-		//setup buffers:
-		std::vector<cl::Buffer> in_buffers(num_in);
-		std::vector<cl::Buffer> in_stride_buffers(num_in);
-		std::vector<cl::Buffer> in_offset_buffers(num_in);
+	cl::Buffer output_buffer;
+	cl::Buffer A_buffer;
+	cl::Buffer B_buffer;
+	cl::Buffer strides_offsets_buffer;
 
-		cl::Buffer out_buffer;
-		cl::Buffer out_shape_buffer;
-		cl::Buffer out_stride_buffer;
-		cl::Buffer out_offset_buffer;
-		cl::Buffer out_offset_end_buffer;
+	std::vector<int> A_stride, B_stride, output_stride;
+	int A_lin_offset, B_lin_offset, output_lin_offset;
+	int output_data_size, B_data_size, A_data_size;
 
-		std::vector<int> A_stride, B_stride, output_stride;
-		int A_lin_offset, B_lin_offset, output_lin_offset;
-		int output_data_size, B_data_size, A_data_size;
-	
-		std::vector<int> output_offset_B_copy(output_offset);
-		std::vector<int> output_offset_end_B_copy(output_offset_end);
-		std::vector<int> output_stride_B_copy(output_stride);
-		std::vector<int> output_shape_B_copy(output_shape);
-		int output_lin_offset_B_copy, output_data_size_B_copy;
+	std::vector<int> output_offset_B_copy(output_offset);
+	std::vector<int> output_offset_end_B_copy(output_offset_end);
+	std::vector<int> output_stride_B_copy(output_stride);
+	std::vector<int> output_shape_B_copy(output_shape);
+	int output_lin_offset_B_copy, output_data_size_B_copy;
 
-		negotiate_strides(A_shape, output_shape, A_offset, output_offset, A_offset_end, output_offset_end, A_stride, output_stride, A_lin_offset, output_lin_offset, dimensions, A_data_size, output_data_size);
-		negotiate_strides(B_shape, output_shape_B_copy, B_offset, output_offset_B_copy, B_offset_end, output_offset_end_B_copy, B_stride, output_stride_B_copy, B_lin_offset, output_lin_offset_B_copy, dimensions, B_data_size, output_data_size_B_copy);
+	negotiate_strides(A_shape, output_shape, A_offset, output_offset, A_offset_end, output_offset_end, A_stride, output_stride, A_lin_offset, output_lin_offset, dimensions, A_data_size, output_data_size);
+	negotiate_strides(B_shape, output_shape_B_copy, B_offset, output_offset_B_copy, B_offset_end, output_offset_end_B_copy, B_stride, output_stride_B_copy, B_lin_offset, output_lin_offset_B_copy, dimensions, B_data_size, output_data_size_B_copy);
 
-		//create "looping over" vectors (seems stupid to it this way...)
-		std::vector<std::vector<int>> input_strides = {A_stride, B_stride};
-		std::vector<std::vector<int>> input_offset = {A_offset, B_offset};
-		std::vector<int> data_sizes_input = {A_data_size, B_data_size};
+	//create "looping over" vectors (seems stupid to it this way...)
 
-		//print debug info:
-		std::cout << "Sending n="<<dimensions << std::endl;
+	//print debug info:
+/*	std::cout << "Sending n="<<dimensions << std::endl;
 
-		std::cout << "A_shapes: ";
-		print_vec(A_shape);
-		std::cout << "B_shapes: ";
-		print_vec(B_shape);
-		std::cout << "Out_shapes ";
-		print_vec(output_shape);
+	std::cout << "A_shapes: ";
+	print_vec(A_shape);
+	std::cout << "B_shapes: ";
+	print_vec(B_shape);
+	std::cout << "Out_shapes ";
+	print_vec(output_shape);
 
-		std::cout << "A_offset: ";
-		print_vec(A_offset);
-		std::cout << "B_offset: ";
-		print_vec(B_offset);
-		std::cout << "out_offset: ";
-		print_vec(output_offset);
+	std::cout << "A_offset: ";
+	print_vec(A_offset);
+	std::cout << "B_offset: ";
+	print_vec(B_offset);
+	std::cout << "out_offset: ";
+	print_vec(output_offset);
 
-		std::cout << "A_lin_offset: " << A_lin_offset << std::endl;
-		std::cout << "B_lin_offset: " << B_lin_offset << std::endl;
-		std::cout << "output_lin_offset: " << output_lin_offset << std::endl;
+	std::cout << "A_lin_offset: " << A_lin_offset << std::endl;
+	std::cout << "B_lin_offset: " << B_lin_offset << std::endl;
+	std::cout << "output_lin_offset: " << output_lin_offset << std::endl;
 
-		std::cout << "A_offset_end: ";
-		print_vec(A_offset_end);		
-		std::cout << "B_offset_end: ";
-		print_vec(B_offset_end);		
-		std::cout << "out_offset_end: ";
-		print_vec(output_offset_end);
+	std::cout << "A_offset_end: ";
+	print_vec(A_offset_end);		
+	std::cout << "B_offset_end: ";
+	print_vec(B_offset_end);		
+	std::cout << "out_offset_end: ";
+	print_vec(output_offset_end);
 
-		std::cout << "A strides: ";
-		print_vec(input_strides[0]);
-		std::cout << "B strides: ";
-		print_vec(input_strides[1]);
-		std::cout << "O strides: ";
-		print_vec(output_stride);
+	std::cout << "A strides: ";
+	print_vec(input_strides[0]);
+	std::cout << "B strides: ";
+	print_vec(input_strides[1]);
+	std::cout << "O strides: ";
+	print_vec(output_stride);
 
-		std::cout << "Input size: " << data_sizes_input[0] << ", " << data_sizes_input[1] << std::endl;
-		std::cout << "Output size: " << output_data_size << std::endl;
+	std::cout << "Input size: " << data_sizes_input[0] << ", " << data_sizes_input[1] << std::endl;
+	std::cout << "Output size: " << output_data_size << std::endl;
+*/
+	// [strides] [offsets] [out shape] [out end offset]
+	// 3*D      + 3D      + D         + D
+	// Total length is 8D where D is dimension of output
+	std::vector<int> strides_offsets(8 * dimensions);
 
-		// write to buffers
-		for (int i = 0; i < num_in; i++){
-			in_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * data_sizes_input[i], inputs[i]);
-			in_stride_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_strides[i].data());
-			in_offset_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_offset[i].data());
-			assert(dimensions == input_strides[i].size());
-			assert(dimensions == input_offset[i].size());
-		}
+	for (int i = 0; i<dimensions; i++){
+		strides_offsets[i] = A_stride[i];
+		strides_offsets[i+1*dimensions] = B_stride[i];
+		strides_offsets[i+2*dimensions] = output_stride[i];
 
-		out_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * output_data_size, outputs[0]);
-		out_shape_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_shape.data());
-		out_stride_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_stride.data());
-		out_offset_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_offset.data());
-		out_offset_end_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_offset_end.data());
+		strides_offsets[i+3*dimensions] = A_offset[i];
+		strides_offsets[i+4*dimensions] = B_offset[i];
+		strides_offsets[i+5*dimensions] = output_offset[i];
 
-		assert(output_shape.size() == dimensions);
-		assert(output_stride.size() == dimensions);
-		assert(output_offset.size() == dimensions);
-		assert(output_offset_end.size() == dimensions);
-
-		std::cout << "INFO: Buffers has been created" << std::endl;
-
-		//set inputs.
-		for (int i = 0; i < num_in; i++){
-			kernel.setArg(i, in_buffers[i]);
-			q.enqueueMigrateMemObjects({in_buffers[i]}, 0);
-		}
-
-		std::cout << "INFO: inputs has been set." <<std::endl;
-
-		//set strides
-		for (int i = num_in; i < (2 * num_in); i++){
-			kernel.setArg(i, in_stride_buffers[i-num_in]);
-			q.enqueueMigrateMemObjects({in_stride_buffers[i-num_in]}, 0);
-		}
-
-		std::cout << "INFO: strides has been set." <<std::endl;
-
-		//set offsets
-		for (int i = (2 * num_in); i < (3 * num_in); i++){
-			kernel.setArg(i, in_offset_buffers[i-2*num_in]);
-			q.enqueueMigrateMemObjects({in_offset_buffers[i-2*num_in]}, 0);
-		}
-
-		std::cout << "INFO: offsets has been set." <<std::endl;
-
-		kernel.setArg(6, A_lin_offset);
-		kernel.setArg(7, B_lin_offset);
-		kernel.setArg(13, output_lin_offset); 
-
-		std::cout << "INFO: linear offsets has been set." <<std::endl;
-
-		//set outputs
-		kernel.setArg(4 * num_in, out_buffer);			  //arg8
-		kernel.setArg(4 * num_in + 1, out_shape_buffer);	  //arg9
-		kernel.setArg(4 * num_in + 2, out_stride_buffer); //arg10
-		kernel.setArg(4 * num_in + 3, out_offset_buffer);		  //arg11
-		kernel.setArg(4 * num_in + 4, out_offset_end_buffer);  //arg12
-
-
-		q.enqueueMigrateMemObjects({out_shape_buffer}, 0); 
-		q.enqueueMigrateMemObjects({out_stride_buffer}, 0); 
-		q.enqueueMigrateMemObjects({out_offset_buffer}, 0); 
-		q.enqueueMigrateMemObjects({out_offset_end_buffer}, 0); 
-
-
-		std::cout << "INFO: outputs has been set\n";
-
-		q.finish();
-
-		std::cout << "INFO: Arguments are set\n";
-
-		q.enqueueTask(kernel);
-		q.finish();
-		q.enqueueMigrateMemObjects({out_buffer}, CL_MIGRATE_MEM_OBJECT_HOST); // 1 : migrate from dev to host
-
-		std::cout << "INFO: Migrated to back to host" << std::endl;
-
-		q.finish();
+		strides_offsets[i+6*dimensions] = output_shape[i];
+		strides_offsets[i+7*dimensions] = output_offset_end[i];
 	}
+
+	A_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * A_data_size, inputs[0]);
+	B_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * B_data_size, inputs[1]);
+
+	output_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * output_data_size, outputs[0]);
+	strides_offsets_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * 8 * dimensions, strides_offsets.data());
+
+	assert(output_shape.size() == dimensions);
+	assert(output_stride.size() == dimensions);
+	assert(output_offset.size() == dimensions);
+	assert(output_offset_end.size() == dimensions);
+
+	std::cout << "INFO: Buffers has been created" << std::endl;
+
+	kernel.setArg(0, A_buffer);
+	kernel.setArg(1, B_buffer);
+	kernel.setArg(2, output_buffer);
+	kernel.setArg(3, A_lin_offset);
+	kernel.setArg(4, B_lin_offset);
+	kernel.setArg(5, output_lin_offset);
+	kernel.setArg(6, strides_offsets_buffer);
+	kernel.setArg(7, dimensions);
+
+
+	q.enqueueMigrateMemObjects({A_buffer}, 0);
+	q.enqueueMigrateMemObjects({B_buffer}, 0);
+	q.enqueueMigrateMemObjects({output_buffer}, 0);
+	q.enqueueMigrateMemObjects({strides_offsets_buffer}, 0);
+
+	std::cout << "INFO: outputs has been set\n";
+
+	q.finish();
+
+	std::cout << "INFO: Arguments are set\n";
+
+	q.enqueueTask(kernel);
+	q.finish();
+	q.enqueueMigrateMemObjects({output_buffer}, CL_MIGRATE_MEM_OBJECT_HOST); // 1 : migrate from dev to host
+
+	std::cout << "INFO: Migrated to back to host" << std::endl;
+
+	q.finish();
 }
 
 void run_gtsv(int kernel_size, std::vector<double *> &inputs, std::vector<cl::Device> &devices, cl::Context &context, cl::Program::Binaries &bins, cl::CommandQueue &q)
@@ -553,174 +522,141 @@ void run_where_kernel(std::string kernel_name,
 							cl::Program::Binaries &bins,
 							cl::CommandQueue &q)
 {
-	{
-		cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
-		cl::Kernel kernel(program, kernel_name.data());
-		std::cout << "INFO: Kernel '" << kernel_name << "' has been created" << std::endl;
+	cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
+	cl::Kernel kernel(program, kernel_name.data());
+	std::cout << "INFO: Kernel '" << kernel_name << "' has been created" << std::endl;
 
-		//num inputs outputs
-		int num_in = inputs.size();
-		int dimensions;
-		int num_out = outputs.size();
+	//num inputs outputs
+	int num_in = inputs.size();
+	int dimensions;
+	int num_out = outputs.size();
 
-		//setup buffers:
-		std::vector<cl::Buffer> in_buffers(num_in);
-		std::vector<cl::Buffer> in_stride_buffers(num_in);
-		std::vector<cl::Buffer> in_offset_buffers(num_in);
+	//setup buffers:
+	cl::Buffer output_buffer;
+	cl::Buffer A_buffer;
+	cl::Buffer B_buffer;
+	cl::Buffer C_buffer;
+	cl::Buffer strides_offsets_buffer;
 
-		cl::Buffer out_buffer;
-		cl::Buffer out_shape_buffer;
-		cl::Buffer out_stride_buffer;
-		cl::Buffer out_offset_buffer;
-		cl::Buffer out_offset_end_buffer;
+	std::vector<int> A_stride, B_stride, C_stride, output_stride;
+	int A_lin_offset, B_lin_offset, C_lin_offset, output_lin_offset;
+	int output_data_size, C_data_size, B_data_size, A_data_size;
 
-		std::vector<int> A_stride, B_stride, C_stride, output_stride;
-		int A_lin_offset, B_lin_offset, C_lin_offset, output_lin_offset;
-		int output_data_size, C_data_size, B_data_size, A_data_size;
-	
-		std::vector<int> output_offset_B_copy(output_offset);
-		std::vector<int> output_offset_end_B_copy(output_offset_end);
-		std::vector<int> output_stride_B_copy(output_stride);
-		std::vector<int> output_shape_B_copy(output_shape);
-		int output_lin_offset_B_copy, output_data_size_B_copy;
+	std::vector<int> output_offset_B_copy(output_offset);
+	std::vector<int> output_offset_end_B_copy(output_offset_end);
+	std::vector<int> output_stride_B_copy(output_stride);
+	std::vector<int> output_shape_B_copy(output_shape);
+	int output_lin_offset_B_copy, output_data_size_B_copy;
 
-		std::vector<int> output_offset_C_copy(output_offset);
-		std::vector<int> output_offset_end_C_copy(output_offset_end);
-		std::vector<int> output_stride_C_copy(output_stride);
-		std::vector<int> output_shape_C_copy(output_shape);
-		int output_lin_offset_C_copy, output_data_size_C_copy;
+	std::vector<int> output_offset_C_copy(output_offset);
+	std::vector<int> output_offset_end_C_copy(output_offset_end);
+	std::vector<int> output_stride_C_copy(output_stride);
+	std::vector<int> output_shape_C_copy(output_shape);
+	int output_lin_offset_C_copy, output_data_size_C_copy;
+
+	negotiate_strides(A_shape, output_shape, A_offset, output_offset, A_offset_end, output_offset_end, A_stride, output_stride, A_lin_offset, output_lin_offset, dimensions, A_data_size, output_data_size);
+	negotiate_strides(B_shape, output_shape_B_copy, B_offset, output_offset_B_copy, B_offset_end, output_offset_end_B_copy, B_stride, output_stride_B_copy, B_lin_offset, output_lin_offset_B_copy, dimensions, B_data_size, output_data_size_B_copy);
+	negotiate_strides(C_shape, output_shape_C_copy, C_offset, output_offset_C_copy, C_offset_end, output_offset_end_C_copy, C_stride, output_stride_C_copy, C_lin_offset, output_lin_offset_C_copy, dimensions, C_data_size, output_data_size_C_copy);
+
+	//print debug info:
+	std::cout << "A_shapes: ";
+	print_vec(A_shape);
+	std::cout << "B_shapes: ";
+	print_vec(B_shape);
+	std::cout << "C_shapes: ";
+	print_vec(C_shape);
+	std::cout << "Out_shapes ";
+	print_vec(output_shape);
+
+	std::cout << "A_offset: ";
+	print_vec(A_offset);
+	std::cout << "B_offset: ";
+	print_vec(B_offset);
+	std::cout << "C_offset: ";
+	print_vec(C_offset);
+	std::cout << "out_offset: ";
+	print_vec(output_offset);
+
+	std::cout << "A_offset_end: ";
+	print_vec(A_offset_end);		
+	std::cout << "B_offset_end: ";
+	print_vec(B_offset_end);
+	std::cout << "C_offset_end: ";
+	print_vec(C_offset_end);		
+	std::cout << "out_offset_end: ";
+	print_vec(output_offset_end);
+
+	std::cout << "Input size: " << A_data_size << ", " << B_data_size << ", " << C_data_size << std::endl;
+	std::cout << "Output size: " << output_data_size << std::endl;
 
 
-		negotiate_strides(A_shape, output_shape, A_offset, output_offset, A_offset_end, output_offset_end, A_stride, output_stride, A_lin_offset, output_lin_offset, dimensions, A_data_size, output_data_size);
-		negotiate_strides(B_shape, output_shape_B_copy, B_offset, output_offset_B_copy, B_offset_end, output_offset_end_B_copy, B_stride, output_stride_B_copy, B_lin_offset, output_lin_offset_B_copy, dimensions, B_data_size, output_data_size_B_copy);
-		negotiate_strides(C_shape, output_shape_C_copy, C_offset, output_offset_C_copy, C_offset_end, output_offset_end_C_copy, C_stride, output_stride_C_copy, C_lin_offset, output_lin_offset_C_copy, dimensions, C_data_size, output_data_size_C_copy);
+	// [strides] [offsets] [out shape] [out end offset]
+	// 4*D      + 4*D      + D         + D
+	// Total length is 10D where D is dimension of output
+	std::vector<int> strides_offsets(10 * dimensions);
 
 
-		//create "looping over" vectors (seems stupid to it this way...)
-		std::vector<std::vector<int>> input_strides = {A_stride, B_stride, C_stride};
-		std::vector<std::vector<int>> input_offset = {A_offset, B_offset, C_offset};
-		std::vector<int> data_sizes_input = {A_data_size, B_data_size, C_data_size};
+	for (int i = 0; i<dimensions; i++){
+		strides_offsets[i] = A_stride[i];
+		strides_offsets[i+1*dimensions] = B_stride[i];
+		strides_offsets[i+2*dimensions] = C_stride[i];
+		strides_offsets[i+3*dimensions] = output_stride[i];
 
-		//print debug info:
-		std::cout << "A_shapes: ";
-		print_vec(A_shape);
-		std::cout << "B_shapes: ";
-		print_vec(B_shape);
-		std::cout << "C_shapes: ";
-		print_vec(C_shape);
-		std::cout << "Out_shapes ";
-		print_vec(output_shape);
+		strides_offsets[i+4*dimensions] = A_offset[i];
+		strides_offsets[i+5*dimensions] = B_offset[i];
+		strides_offsets[i+6*dimensions] = C_offset[i];
+		strides_offsets[i+7*dimensions] = output_offset[i];
 
-		std::cout << "A_offset: ";
-		print_vec(A_offset);
-		std::cout << "B_offset: ";
-		print_vec(B_offset);
-		std::cout << "C_offset: ";
-		print_vec(C_offset);
-		std::cout << "out_offset: ";
-		print_vec(output_offset);
-
-
-		std::cout << "A_offset_end: ";
-		print_vec(A_offset_end);		
-		std::cout << "B_offset_end: ";
-		print_vec(B_offset_end);
-		std::cout << "C_offset_end: ";
-		print_vec(C_offset_end);		
-		std::cout << "out_offset_end: ";
-		print_vec(output_offset_end);
-
-		std::cout << "A strides: ";
-		print_vec(input_strides[0]);
-		std::cout << "B strides: ";
-		print_vec(input_strides[1]);
-		std::cout << "C strides: ";
-		print_vec(input_strides[2]);
-		std::cout << "O strides: ";
-		print_vec(output_stride);
-
-		std::cout << "Input size: " << data_sizes_input[0] << ", " << data_sizes_input[1] << ", " << data_sizes_input[2] << std::endl;
-		std::cout << "Output size: " << output_data_size << std::endl;
-
-		// write to buffers
-		for (int i = 0; i < num_in; i++){
-			in_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * data_sizes_input[i], inputs[i]);
-			in_stride_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_strides[i].data());
-			in_offset_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_offset[i].data());
-			assert(dimensions == input_strides[i].size());
-			assert(dimensions == input_offset[i].size());
-		}
-
-		out_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * output_data_size, outputs[0]);
-		out_shape_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_shape.data());
-		out_stride_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_stride.data());
-		out_offset_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_offset.data());
-		out_offset_end_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_offset_end.data());
-
-		assert(output_shape.size() == dimensions);
-		assert(output_stride.size() == dimensions);
-		assert(output_offset.size() == dimensions);
-		assert(output_offset_end.size() == dimensions);
-
-		std::cout << "INFO: Buffers has been created" << std::endl;
-
-		//set inputs.
-		for (int i = 0; i < num_in; i++){
-			kernel.setArg(i, in_buffers[i]);
-			q.enqueueMigrateMemObjects({in_buffers[i]}, 0);
-		}
-
-		std::cout << "INFO: inputs has been set." <<std::endl;
-
-		//set strides
-		for (int i = num_in; i < (2 * num_in); i++){
-			kernel.setArg(i, in_stride_buffers[i-num_in]);
-			q.enqueueMigrateMemObjects({in_stride_buffers[i-num_in]}, 0);
-		}
-
-		std::cout << "INFO: strides has been set." <<std::endl;
-
-		//set offsets
-		for (int i = (2 * num_in); i < (3 * num_in); i++){
-			kernel.setArg(i, in_offset_buffers[i-2*num_in]);
-			q.enqueueMigrateMemObjects({in_offset_buffers[i-2*num_in]}, 0);
-		}
-
-		std::cout << "INFO: offests has been set." <<std::endl;
-
-		kernel.setArg(9, A_lin_offset);
-		kernel.setArg(10, B_lin_offset);
-		kernel.setArg(11, C_lin_offset); 
-		kernel.setArg(17, output_lin_offset); 
-
-		std::cout << "INFO: linear offsets has been set." <<std::endl;
-
-		//set outputs
-		kernel.setArg(4 * num_in, out_buffer);			  //arg6
-		kernel.setArg(4 * num_in + 1, out_shape_buffer);	  //arg7
-		kernel.setArg(4 * num_in + 2, out_stride_buffer); //arg8
-		kernel.setArg(4 * num_in + 3, out_offset_buffer);		  //arg9
-		kernel.setArg(4 * num_in + 4, out_offset_end_buffer);  //arg10
-
-		q.enqueueMigrateMemObjects({out_shape_buffer}, 0);
-		q.enqueueMigrateMemObjects({out_stride_buffer}, 0);
-		q.enqueueMigrateMemObjects({out_offset_buffer}, 0);
-		q.enqueueMigrateMemObjects({out_offset_end_buffer}, 0);
-
-		std::cout << "INFO: outputs has been set\n";
-
-		q.finish();
-
-		std::cout << "INFO: Arguments are set\n";
-
-		q.enqueueTask(kernel);
-		q.finish();
-		q.enqueueMigrateMemObjects({out_buffer}, CL_MIGRATE_MEM_OBJECT_HOST); // 1 : migrate from dev to host
-
-		std::cout << "INFO: Migrated to back to host" << std::endl;
-
-		q.finish();
+		strides_offsets[i+8*dimensions] = output_shape[i];
+		strides_offsets[i+9*dimensions] = output_offset_end[i];
 	}
+
+	A_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * A_data_size, inputs[0]);
+	B_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * B_data_size, inputs[1]);
+	C_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * C_data_size, inputs[2]);
+
+	output_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * output_data_size, outputs[0]);
+	strides_offsets_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * 10 * dimensions, strides_offsets.data());
+
+	assert(output_shape.size() == dimensions);
+	assert(output_stride.size() == dimensions);
+	assert(output_offset.size() == dimensions);
+	assert(output_offset_end.size() == dimensions);
+
+	std::cout << "INFO: Buffers has been created" << std::endl;
+
+	kernel.setArg(0, A_buffer);
+	kernel.setArg(1, B_buffer);
+	kernel.setArg(2, C_buffer);
+	kernel.setArg(3, output_buffer);
+	kernel.setArg(4, A_lin_offset);
+	kernel.setArg(5, B_lin_offset);
+	kernel.setArg(6, C_lin_offset);
+	kernel.setArg(7, output_lin_offset);
+	kernel.setArg(8, strides_offsets_buffer);
+	kernel.setArg(9, dimensions);
+
+
+	q.enqueueMigrateMemObjects({A_buffer}, 0);
+	q.enqueueMigrateMemObjects({B_buffer}, 0);
+	q.enqueueMigrateMemObjects({C_buffer}, 0);
+	q.enqueueMigrateMemObjects({output_buffer}, 0);
+	q.enqueueMigrateMemObjects({strides_offsets_buffer}, 0);
+
+
+	std::cout << "INFO: outputs has been set\n";
+
+	q.finish();
+
+	std::cout << "INFO: Arguments are set\n";
+
+	q.enqueueTask(kernel);
+	q.finish();
+	q.enqueueMigrateMemObjects({output_buffer}, CL_MIGRATE_MEM_OBJECT_HOST); // 1 : migrate from dev to host
+
+	std::cout << "INFO: Migrated to back to host" << std::endl;
+
+	q.finish();
 }
 
 void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<double> &mask, xt::xarray<double> &dx, int axis, xt::xarray<double> &cost, xt::xarray<double> &cosu, 
@@ -1303,10 +1239,12 @@ int main(int argc, const char *argv[])
 	inputs = {kappaM.data(), kappaM.data()};
 	outputs = {delta.data()};
 	run_broadcast_kernel("add3d", inputs, outputs, 
-		{X, Y, Z}, {X,Y,Z}, {X-4, Y-4, Z},			//shapes
+		{X, Y, Z}, {X,Y, Z}, {X-4, Y-4, Z},			//shapes
 		{2, 2, 0}, {2, 2, 1}, {0, 0, 0,},			//start index
 		{-2, -2, -1}, {-2, -2, 0}, {0, 0, -1}, 		//negativ end index
 		devices, context, bins, q);
+
+
 
 	inputs = {half.data(), delta.data()};
 	outputs = {delta.data()};
@@ -1323,7 +1261,7 @@ int main(int argc, const char *argv[])
 		{0, 0, 0}, {1}, {0, 0, 0,},					//start index
 		{0, 0, -1}, {0}, {0, 0, -1}, 				//negativ end index
 		devices, context, bins, q);
-	
+
 	//a_tri
 	inputs = {zero.data(), delta.data(), };
 	outputs = {a_tri.data()};
@@ -2197,6 +2135,5 @@ int main(int argc, const char *argv[])
 	std::cout << "maskWtr (2558)..: " << xt::sum(maskWtr) << std::endl;
 
 	std::cout << "dtke (-600012) " << xt::sum(dtke) << std::endl;
-
 	return 0;
 }

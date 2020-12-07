@@ -258,6 +258,14 @@ int next_largets_factor_2(int n){
 	return factor_2;
 }
 
+void print_vec(int* pnt, int n){
+	std::cout << std::endl;
+	for (int i = 0; i<n; i++){
+		std::cout << pnt[i] << ", ";
+	}
+	std::cout << std::endl;
+}
+
 void run_broadcast_kernel(std::string kernel_name,
 							std::vector<double *> &inputs,
 							std::vector<double *> &outputs,
@@ -275,928 +283,136 @@ void run_broadcast_kernel(std::string kernel_name,
 							cl::Program::Binaries &bins,
 							cl::CommandQueue &q)
 {
-	// this is a helper function to execute a kernel.
-	{
-		//setup program and kernel:
-		cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
-		cl::Kernel kernel(program, kernel_name.data());
-		std::cout << "INFO: Kernel '" << kernel_name << "' has been created" << std::endl;
-
-		int num_in = 2;
-		int dimensions;
-
-		//setup buffers:
-		std::vector<cl::Buffer> in_buffers(num_in);
-		std::vector<cl::Buffer> in_stride_buffers(num_in);
-		std::vector<cl::Buffer> in_offset_buffers(num_in);
-
-		cl::Buffer out_buffer;
-		cl::Buffer out_shape_buffer;
-		cl::Buffer out_stride_buffer;
-		cl::Buffer out_offset_buffer;
-		cl::Buffer out_offset_end_buffer;
-
-		std::vector<int> A_stride, B_stride, output_stride;
-		int A_lin_offset, B_lin_offset, output_lin_offset;
-		int output_data_size, B_data_size, A_data_size;
-	
-		std::vector<int> output_offset_B_copy(output_offset);
-		std::vector<int> output_offset_end_B_copy(output_offset_end);
-		std::vector<int> output_stride_B_copy(output_stride);
-		std::vector<int> output_shape_B_copy(output_shape);
-		int output_lin_offset_B_copy, output_data_size_B_copy;
-
-		negotiate_strides(A_shape, output_shape, A_offset, output_offset, A_offset_end, output_offset_end, A_stride, output_stride, A_lin_offset, output_lin_offset, dimensions, A_data_size, output_data_size);
-		negotiate_strides(B_shape, output_shape_B_copy, B_offset, output_offset_B_copy, B_offset_end, output_offset_end_B_copy, B_stride, output_stride_B_copy, B_lin_offset, output_lin_offset_B_copy, dimensions, B_data_size, output_data_size_B_copy);
-
-		//create "looping over" vectors (seems stupid to it this way...)
-		std::vector<std::vector<int>> input_strides = {A_stride, B_stride};
-		std::vector<std::vector<int>> input_offset = {A_offset, B_offset};
-		std::vector<int> data_sizes_input = {A_data_size, B_data_size};
-
-		//print debug info:
-		std::cout << "Sending n="<<dimensions << std::endl;
-
-		std::cout << "A_shapes: ";
-		print_vec(A_shape);
-		std::cout << "B_shapes: ";
-		print_vec(B_shape);
-		std::cout << "Out_shapes ";
-		print_vec(output_shape);
-
-		std::cout << "A_offset: ";
-		print_vec(A_offset);
-		std::cout << "B_offset: ";
-		print_vec(B_offset);
-		std::cout << "out_offset: ";
-		print_vec(output_offset);
-
-		std::cout << "A_lin_offset: " << A_lin_offset << std::endl;
-		std::cout << "B_lin_offset: " << B_lin_offset << std::endl;
-		std::cout << "output_lin_offset: " << output_lin_offset << std::endl;
-
-		std::cout << "A_offset_end: ";
-		print_vec(A_offset_end);		
-		std::cout << "B_offset_end: ";
-		print_vec(B_offset_end);		
-		std::cout << "out_offset_end: ";
-		print_vec(output_offset_end);
-
-		std::cout << "A strides: ";
-		print_vec(input_strides[0]);
-		std::cout << "B strides: ";
-		print_vec(input_strides[1]);
-		std::cout << "O strides: ";
-		print_vec(output_stride);
-
-		std::cout << "Input size: " << data_sizes_input[0] << ", " << data_sizes_input[1] << std::endl;
-		std::cout << "Output size: " << output_data_size << std::endl;
-
-		// write to buffers
-		for (int i = 0; i < num_in; i++){
-			in_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * data_sizes_input[i], inputs[i]);
-			in_stride_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_strides[i].data());
-			in_offset_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_offset[i].data());
-			assert(dimensions == input_strides[i].size());
-			assert(dimensions == input_offset[i].size());
-		}
-
-		out_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * output_data_size, outputs[0]);
-		out_shape_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_shape.data());
-		out_stride_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_stride.data());
-		out_offset_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_offset.data());
-		out_offset_end_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_offset_end.data());
-
-		assert(output_shape.size() == dimensions);
-		assert(output_stride.size() == dimensions);
-		assert(output_offset.size() == dimensions);
-		assert(output_offset_end.size() == dimensions);
-
-		std::cout << "INFO: Buffers has been created" << std::endl;
-
-		//set inputs.
-		for (int i = 0; i < num_in; i++){
-			kernel.setArg(i, in_buffers[i]);
-			q.enqueueMigrateMemObjects({in_buffers[i]}, 0);
-		}
-
-		std::cout << "INFO: inputs has been set." <<std::endl;
-
-		//set strides
-		for (int i = num_in; i < (2 * num_in); i++){
-			kernel.setArg(i, in_stride_buffers[i-num_in]);
-			q.enqueueMigrateMemObjects({in_stride_buffers[i-num_in]}, 0);
-		}
-
-		std::cout << "INFO: strides has been set." <<std::endl;
-
-		//set offsets
-		for (int i = (2 * num_in); i < (3 * num_in); i++){
-			kernel.setArg(i, in_offset_buffers[i-2*num_in]);
-			q.enqueueMigrateMemObjects({in_offset_buffers[i-2*num_in]}, 0);
-		}
-
-		std::cout << "INFO: offsets has been set." <<std::endl;
-
-		kernel.setArg(6, A_lin_offset);
-		kernel.setArg(7, B_lin_offset);
-		kernel.setArg(13, output_lin_offset); 
-
-		std::cout << "INFO: linear offsets has been set." <<std::endl;
-
-		//set outputs
-		kernel.setArg(4 * num_in, out_buffer);			  //arg8
-		kernel.setArg(4 * num_in + 1, out_shape_buffer);	  //arg9
-		kernel.setArg(4 * num_in + 2, out_stride_buffer); //arg10
-		kernel.setArg(4 * num_in + 3, out_offset_buffer);		  //arg11
-		kernel.setArg(4 * num_in + 4, out_offset_end_buffer);  //arg12
-
-
-		q.enqueueMigrateMemObjects({out_shape_buffer}, 0); 
-		q.enqueueMigrateMemObjects({out_stride_buffer}, 0); 
-		q.enqueueMigrateMemObjects({out_offset_buffer}, 0); 
-		q.enqueueMigrateMemObjects({out_offset_end_buffer}, 0); 
-
-
-		std::cout << "INFO: outputs has been set\n";
-
-		q.finish();
-
-		std::cout << "INFO: Arguments are set\n";
-
-		q.enqueueTask(kernel);
-		q.finish();
-		q.enqueueMigrateMemObjects({out_buffer}, CL_MIGRATE_MEM_OBJECT_HOST); // 1 : migrate from dev to host
-
-		std::cout << "INFO: Migrated to back to host" << std::endl;
-
-		q.finish();
-	}
-}
-
-void run_gtsv(int kernel_size, std::vector<double *> &inputs, std::vector<cl::Device> &devices, cl::Context &context, cl::Program::Binaries &bins, cl::CommandQueue &q)
-{
-	// tridiagnals are taken to be equal length. We intepret upper and lower diagonals such that the extra index is a zero by writng that memory to zero. 
-	int N_pow_2 = next_largets_factor_2(kernel_size); // For some reason, gtsv kernel only works when its powers of two sized input. We are going to zero pad!
-	std::string kernel_name = "gtsv" + std::to_string(N_pow_2);
-
-	std::cout << "Running kernel: " << kernel_name << std::endl;
-
+	//setup program and kernel:
 	cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
 	cl::Kernel kernel(program, kernel_name.data());
+	std::cout << "INFO: Kernel '" << kernel_name << "' has been created" << std::endl;
 
-	// DDR Settings
-	std::vector<cl_mem_ext_ptr_t> mext_io(4);
-	mext_io[0].flags = XCL_MEM_DDR_BANK0;
-	mext_io[1].flags = XCL_MEM_DDR_BANK0;
-	mext_io[2].flags = XCL_MEM_DDR_BANK0;
-	mext_io[3].flags = XCL_MEM_DDR_BANK0;
+	int num_in = 2;
+	int dimensions;
 
-	inputs[0][0] = 0; 	//on a tri-diagonal matrix, upper and lower diagonals have n-1 entries. We zero them like this to fit gtsv kernel convetion
-	inputs[2][kernel_size - 1] = 0;
+	cl::Buffer output_buffer;
+	cl::Buffer A_buffer;
+	cl::Buffer B_buffer;
+	cl::Buffer strides_offsets_buffer;
 
-	double* a_tri_padded = aligned_alloc<double>(N_pow_2);
-	double* b_tri_padded = aligned_alloc<double>(N_pow_2);
-	double* c_tri_padded = aligned_alloc<double>(N_pow_2);
-	double* d_tri_padded = aligned_alloc<double>(N_pow_2);
+	std::vector<int> A_stride, B_stride, output_stride;
+	int A_lin_offset, B_lin_offset, output_lin_offset;
+	int output_data_size, B_data_size, A_data_size;
 
-	double *a_tri = inputs[0];
-	double *b_tri = inputs[1];
-	double *c_tri = inputs[2];
-	double *d_tri = inputs[3];
+	std::vector<int> output_offset_B_copy(output_offset);
+	std::vector<int> output_offset_end_B_copy(output_offset_end);
+	std::vector<int> output_stride_B_copy(output_stride);
+	std::vector<int> output_shape_B_copy(output_shape);
+	int output_lin_offset_B_copy, output_data_size_B_copy;
 
-	for (int i = 0; i<kernel_size; i++){
-		a_tri_padded[i] = a_tri[i];
-		b_tri_padded[i] = b_tri[i];
-		c_tri_padded[i] = c_tri[i];
-		d_tri_padded[i] = d_tri[i];
+	negotiate_strides(A_shape, output_shape, A_offset, output_offset, A_offset_end, output_offset_end, A_stride, output_stride, A_lin_offset, output_lin_offset, dimensions, A_data_size, output_data_size);
+	negotiate_strides(B_shape, output_shape_B_copy, B_offset, output_offset_B_copy, B_offset_end, output_offset_end_B_copy, B_stride, output_stride_B_copy, B_lin_offset, output_lin_offset_B_copy, dimensions, B_data_size, output_data_size_B_copy);
 
+	//create "looping over" vectors (seems stupid to it this way...)
+	std::vector<std::vector<int>> input_strides = {A_stride, B_stride};
+	std::vector<std::vector<int>> input_offset = {A_offset, B_offset};
+	std::vector<int> data_sizes_input = {A_data_size, B_data_size};
+
+	//print debug info:
+	std::cout << "Sending n="<<dimensions << std::endl;
+
+	std::cout << "A_shapes: ";
+	print_vec(A_shape);
+	std::cout << "B_shapes: ";
+	print_vec(B_shape);
+	std::cout << "Out_shapes ";
+	print_vec(output_shape);
+
+	std::cout << "A_offset: ";
+	print_vec(A_offset);
+	std::cout << "B_offset: ";
+	print_vec(B_offset);
+	std::cout << "out_offset: ";
+	print_vec(output_offset);
+
+	std::cout << "A_lin_offset: " << A_lin_offset << std::endl;
+	std::cout << "B_lin_offset: " << B_lin_offset << std::endl;
+	std::cout << "output_lin_offset: " << output_lin_offset << std::endl;
+
+	std::cout << "A_offset_end: ";
+	print_vec(A_offset_end);		
+	std::cout << "B_offset_end: ";
+	print_vec(B_offset_end);		
+	std::cout << "out_offset_end: ";
+	print_vec(output_offset_end);
+
+	std::cout << "A strides: ";
+	print_vec(input_strides[0]);
+	std::cout << "B strides: ";
+	print_vec(input_strides[1]);
+	std::cout << "O strides: ";
+	print_vec(output_stride);
+
+	std::cout << "Input size: " << data_sizes_input[0] << ", " << data_sizes_input[1] << std::endl;
+	std::cout << "Output size: " << output_data_size << std::endl;
+
+	// [strides] [offsets] [out shape] [out end offset]
+	// 3*D      + 3D      + D         + D
+	// Total length is 8D where D is dimension of output
+	std::vector<int> strides_offsets(8 * dimensions);
+
+	for (int i = 0; i<dimensions; i++){
+		strides_offsets[i] = A_stride[i];
+		strides_offsets[i+1*dimensions] = B_stride[i];
+		strides_offsets[i+2*dimensions] = output_stride[i];
+
+		strides_offsets[i+3*dimensions] = A_offset[i];
+		strides_offsets[i+4*dimensions] = B_offset[i];
+		strides_offsets[i+5*dimensions] = output_offset[i];
+
+		strides_offsets[i+6*dimensions] = output_shape[i];
+		strides_offsets[i+7*dimensions] = output_offset_end[i];
 	}
-	for (int i = kernel_size; i<N_pow_2; i++){
-		a_tri_padded[i] = 0;
-		b_tri_padded[i] = 1; // i think this helps with stability,
-		c_tri_padded[i] = 0;
-		d_tri_padded[i] = 0;
-	}
 
-	mext_io[0].obj = a_tri_padded;
-	mext_io[0].param = 0;
-	mext_io[1].obj = b_tri_padded;
-	mext_io[1].param = 0;
-	mext_io[2].obj = c_tri_padded;
-	mext_io[2].param = 0;
-	mext_io[3].obj = d_tri_padded;
-	mext_io[3].param = 0;
+	A_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * A_data_size, inputs[0]);
+	B_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * B_data_size, inputs[1]);
 
-	// Create device buffer and map dev buf to host buf
-	cl::Buffer matdiaglow_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
-									sizeof(double) * N_pow_2, &mext_io[0]);
-	cl::Buffer matdiag_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
-								sizeof(double) * N_pow_2, &mext_io[1]);
-	cl::Buffer matdiagup_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
-									sizeof(double) * N_pow_2, &mext_io[2]);
-	cl::Buffer rhs_buffer = cl::Buffer(context, CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
-							sizeof(double) * N_pow_2, &mext_io[3]);
+	output_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * output_data_size, outputs[0]);
+	strides_offsets_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * 8 * dimensions, strides_offsets.data());
 
-	// Data transfer from host buffer to device buffer
-	std::vector<std::vector<cl::Event> > kernel_evt(2);
-	kernel_evt[0].resize(1);
-	kernel_evt[1].resize(1);
+	assert(output_shape.size() == dimensions);
+	assert(output_stride.size() == dimensions);
+	assert(output_offset.size() == dimensions);
+	assert(output_offset_end.size() == dimensions);
 
-	std::vector<cl::Memory> ob_in, ob_out;
-	ob_in.push_back(matdiaglow_buffer);
-	ob_in.push_back(matdiag_buffer);
-	ob_in.push_back(matdiagup_buffer);
-	ob_in.push_back(rhs_buffer);
-	ob_out.push_back(rhs_buffer);
+	std::cout << "INFO: Buffers has been created" << std::endl;
 
-	q.enqueueMigrateMemObjects(ob_in, 0, nullptr, &kernel_evt[0][0]); // 0 : migrate from host to dev
-	q.finish();
-	std::cout << "INFO: Finish data transfer from host to device" << std::endl;
+	kernel.setArg(0, A_buffer);
+	kernel.setArg(1, B_buffer);
+	kernel.setArg(2, output_buffer);
+	kernel.setArg(3, A_lin_offset);
+	kernel.setArg(4, B_lin_offset);
+	kernel.setArg(5, output_lin_offset);
+	kernel.setArg(6, strides_offsets_buffer);
+	kernel.setArg(7, dimensions);
 
-	// Setup kernel
-	kernel.setArg(0, N_pow_2);
-	kernel.setArg(1, matdiaglow_buffer);
-	kernel.setArg(2, matdiag_buffer);
-	kernel.setArg(3, matdiagup_buffer);
-	kernel.setArg(4, rhs_buffer);
-	q.finish();
-	std::cout << "INFO: Finish kernel setup" << std::endl;
 
-	q.enqueueTask(kernel, nullptr, nullptr);
-	q.finish();
-	q.enqueueMigrateMemObjects(ob_out, 1, nullptr, nullptr); // 1 : migrate from dev to host
+	q.enqueueMigrateMemObjects({A_buffer}, 0);
+	q.enqueueMigrateMemObjects({B_buffer}, 0);
+	q.enqueueMigrateMemObjects({output_buffer}, 0);
+	q.enqueueMigrateMemObjects({strides_offsets_buffer}, 0);
+
+	std::cout << "INFO: outputs has been set\n";
+
 	q.finish();
 
-	for (int i=0; i<kernel_size; i++){ // put the solution from the padded output of kernel into working memeory
-		d_tri[i] = d_tri_padded[i];
-	}
+	std::cout << "INFO: Arguments are set\n";
+
+	q.enqueueTask(kernel);
+	q.finish();
+	q.enqueueMigrateMemObjects({output_buffer}, CL_MIGRATE_MEM_OBJECT_HOST); // 1 : migrate from dev to host
+
+	std::cout << "INFO: Migrated to back to host" << std::endl;
+
+	q.finish();
 }
 
-void run_where_kernel(std::string kernel_name, 
-							std::vector<double *> &inputs,
-							std::vector<double *> &outputs,
-							std::vector<int> A_shape,
-							std::vector<int> B_shape,
-							std::vector<int> C_shape,
-							std::vector<int> output_shape,
-							std::vector<int> A_offset,
-							std::vector<int> B_offset,
-							std::vector<int> C_offset,
-							std::vector<int> output_offset,
-							std::vector<int> A_offset_end,
-							std::vector<int> B_offset_end,
-							std::vector<int> C_offset_end,
-							std::vector<int> output_offset_end,
-							std::vector<cl::Device> &devices,
-							cl::Context &context,
-							cl::Program::Binaries &bins,
-							cl::CommandQueue &q)
-{
-	{
-		cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
-		cl::Kernel kernel(program, kernel_name.data());
-		std::cout << "INFO: Kernel '" << kernel_name << "' has been created" << std::endl;
-
-		//num inputs outputs
-		int num_in = inputs.size();
-		int dimensions;
-		int num_out = outputs.size();
-
-		//setup buffers:
-		std::vector<cl::Buffer> in_buffers(num_in);
-		std::vector<cl::Buffer> in_stride_buffers(num_in);
-		std::vector<cl::Buffer> in_offset_buffers(num_in);
-
-		cl::Buffer out_buffer;
-		cl::Buffer out_shape_buffer;
-		cl::Buffer out_stride_buffer;
-		cl::Buffer out_offset_buffer;
-		cl::Buffer out_offset_end_buffer;
-
-		std::vector<int> A_stride, B_stride, C_stride, output_stride;
-		int A_lin_offset, B_lin_offset, C_lin_offset, output_lin_offset;
-		int output_data_size, C_data_size, B_data_size, A_data_size;
-	
-		std::vector<int> output_offset_B_copy(output_offset);
-		std::vector<int> output_offset_end_B_copy(output_offset_end);
-		std::vector<int> output_stride_B_copy(output_stride);
-		std::vector<int> output_shape_B_copy(output_shape);
-		int output_lin_offset_B_copy, output_data_size_B_copy;
-
-		std::vector<int> output_offset_C_copy(output_offset);
-		std::vector<int> output_offset_end_C_copy(output_offset_end);
-		std::vector<int> output_stride_C_copy(output_stride);
-		std::vector<int> output_shape_C_copy(output_shape);
-		int output_lin_offset_C_copy, output_data_size_C_copy;
-
-
-		negotiate_strides(A_shape, output_shape, A_offset, output_offset, A_offset_end, output_offset_end, A_stride, output_stride, A_lin_offset, output_lin_offset, dimensions, A_data_size, output_data_size);
-		negotiate_strides(B_shape, output_shape_B_copy, B_offset, output_offset_B_copy, B_offset_end, output_offset_end_B_copy, B_stride, output_stride_B_copy, B_lin_offset, output_lin_offset_B_copy, dimensions, B_data_size, output_data_size_B_copy);
-		negotiate_strides(C_shape, output_shape_C_copy, C_offset, output_offset_C_copy, C_offset_end, output_offset_end_C_copy, C_stride, output_stride_C_copy, C_lin_offset, output_lin_offset_C_copy, dimensions, C_data_size, output_data_size_C_copy);
-
-
-		//create "looping over" vectors (seems stupid to it this way...)
-		std::vector<std::vector<int>> input_strides = {A_stride, B_stride, C_stride};
-		std::vector<std::vector<int>> input_offset = {A_offset, B_offset, C_offset};
-		std::vector<int> data_sizes_input = {A_data_size, B_data_size, C_data_size};
-
-		//print debug info:
-		std::cout << "A_shapes: ";
-		print_vec(A_shape);
-		std::cout << "B_shapes: ";
-		print_vec(B_shape);
-		std::cout << "C_shapes: ";
-		print_vec(C_shape);
-		std::cout << "Out_shapes ";
-		print_vec(output_shape);
-
-		std::cout << "A_offset: ";
-		print_vec(A_offset);
-		std::cout << "B_offset: ";
-		print_vec(B_offset);
-		std::cout << "C_offset: ";
-		print_vec(C_offset);
-		std::cout << "out_offset: ";
-		print_vec(output_offset);
-
-
-		std::cout << "A_offset_end: ";
-		print_vec(A_offset_end);		
-		std::cout << "B_offset_end: ";
-		print_vec(B_offset_end);
-		std::cout << "C_offset_end: ";
-		print_vec(C_offset_end);		
-		std::cout << "out_offset_end: ";
-		print_vec(output_offset_end);
-
-		std::cout << "A strides: ";
-		print_vec(input_strides[0]);
-		std::cout << "B strides: ";
-		print_vec(input_strides[1]);
-		std::cout << "C strides: ";
-		print_vec(input_strides[2]);
-		std::cout << "O strides: ";
-		print_vec(output_stride);
-
-		std::cout << "Input size: " << data_sizes_input[0] << ", " << data_sizes_input[1] << ", " << data_sizes_input[2] << std::endl;
-		std::cout << "Output size: " << output_data_size << std::endl;
-
-		// write to buffers
-		for (int i = 0; i < num_in; i++){
-			in_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * data_sizes_input[i], inputs[i]);
-			in_stride_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_strides[i].data());
-			in_offset_buffers[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, input_offset[i].data());
-			assert(dimensions == input_strides[i].size());
-			assert(dimensions == input_offset[i].size());
-		}
-
-		out_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * output_data_size, outputs[0]);
-		out_shape_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_shape.data());
-		out_stride_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_stride.data());
-		out_offset_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_offset.data());
-		out_offset_end_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * dimensions, output_offset_end.data());
-
-		assert(output_shape.size() == dimensions);
-		assert(output_stride.size() == dimensions);
-		assert(output_offset.size() == dimensions);
-		assert(output_offset_end.size() == dimensions);
-
-		std::cout << "INFO: Buffers has been created" << std::endl;
-
-		//set inputs.
-		for (int i = 0; i < num_in; i++){
-			kernel.setArg(i, in_buffers[i]);
-			q.enqueueMigrateMemObjects({in_buffers[i]}, 0);
-		}
-
-		std::cout << "INFO: inputs has been set." <<std::endl;
-
-		//set strides
-		for (int i = num_in; i < (2 * num_in); i++){
-			kernel.setArg(i, in_stride_buffers[i-num_in]);
-			q.enqueueMigrateMemObjects({in_stride_buffers[i-num_in]}, 0);
-		}
-
-		std::cout << "INFO: strides has been set." <<std::endl;
-
-		//set offsets
-		for (int i = (2 * num_in); i < (3 * num_in); i++){
-			kernel.setArg(i, in_offset_buffers[i-2*num_in]);
-			q.enqueueMigrateMemObjects({in_offset_buffers[i-2*num_in]}, 0);
-		}
-
-		std::cout << "INFO: offests has been set." <<std::endl;
-
-		kernel.setArg(9, A_lin_offset);
-		kernel.setArg(10, B_lin_offset);
-		kernel.setArg(11, C_lin_offset); 
-		kernel.setArg(17, output_lin_offset); 
-
-		std::cout << "INFO: linear offsets has been set." <<std::endl;
-
-		//set outputs
-		kernel.setArg(4 * num_in, out_buffer);			  //arg6
-		kernel.setArg(4 * num_in + 1, out_shape_buffer);	  //arg7
-		kernel.setArg(4 * num_in + 2, out_stride_buffer); //arg8
-		kernel.setArg(4 * num_in + 3, out_offset_buffer);		  //arg9
-		kernel.setArg(4 * num_in + 4, out_offset_end_buffer);  //arg10
-
-		q.enqueueMigrateMemObjects({out_shape_buffer}, 0);
-		q.enqueueMigrateMemObjects({out_stride_buffer}, 0);
-		q.enqueueMigrateMemObjects({out_offset_buffer}, 0);
-		q.enqueueMigrateMemObjects({out_offset_end_buffer}, 0);
-
-		std::cout << "INFO: outputs has been set\n";
-
-		q.finish();
-
-		std::cout << "INFO: Arguments are set\n";
-
-		q.enqueueTask(kernel);
-		q.finish();
-		q.enqueueMigrateMemObjects({out_buffer}, CL_MIGRATE_MEM_OBJECT_HOST); // 1 : migrate from dev to host
-
-		std::cout << "INFO: Migrated to back to host" << std::endl;
-
-		q.finish();
-	}
-}
-
-void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<double> &mask, xt::xarray<double> &dx, int axis, xt::xarray<double> &cost, xt::xarray<double> &cosu, 
-							xt::xarray<double> &out, std::vector<int> out_shape, std::vector<int> out_starts, std::vector<int> out_ends,
-							std::vector<cl::Device> &devices,
-							cl::Context &context,
-							cl::Program::Binaries &bins,
-							cl::CommandQueue &q){
-
-	// start by getting indexing:
-	std::vector<std::vector<int>> starts, ends, mask_starts, mask_ends;
-	std::vector<double*> inputs, outputs;
-
-	// permute depending on which axis we are working
-
-	xt::xarray<double> zero = xt::zeros<double>({1});	
-	xt::xarray<double> one = xt::ones<double>({1});
-	xt::xarray<double> two = xt::ones<double>({1}) * 2;
-
-	xt::xarray<double> velfac, dx_local;
-	std::vector<int> dx_local_shape, velfac_shape, velfac_starts, velfac_ends, dx_shape, vel_var_shape, mask_shape, intermediate_shape;
-
-	double *vel_save, *var_save, *mask_save; // save the pointer locations so we can swap back l8er
-
-	xt::xarray<double> vel_pad_temp;
-	xt::xarray<double> var_pad_temp;
-	xt::xarray<double> mask_pad_temp;
-	
-	if (axis==0){
-		for (int n=-1; n<3; n++){
-			starts.push_back({1 + n, 2, 0, 0});
-			ends.push_back({-2 + n, -2 , 0, -2});
-			mask_starts.push_back({1 + n, 2, 0, });
-			mask_ends.push_back({-2 + n, -2 , 0, }); // the masks are 3d sized {X, Y, Z}, we can't have the last (constnat) index on them. 
-		}
-
-		dx_local_shape = {X-3, Y-4, 1};
-		dx_shape = {X};
-		velfac_shape = {1};
-		velfac_starts = {0,};
-		velfac_ends = {0,};
-		vel_var_shape = {X, Y, Z, 3};
-		mask_shape = {X, Y, Z};
-		intermediate_shape = {X-starts[1][0] + ends[1][0], Y - starts[1][1] + ends[1][1], Z - starts[1][2] + ends[1][2]};
-
-		dx_local = xt::zeros<double>(dx_local_shape);
-		velfac = xt::ones<double>({1});
-
-		inputs = {cost.data(), dx.data()};
-		outputs = {dx_local.data()};
-		run_broadcast_kernel("mult2d", inputs, outputs, 
-			{1, Y, 1}, {X, 1 ,1 }, dx_local_shape,					//shapes
-			{0, 2, 0}, {1, 0, 0}, {0, 0, 0},						//start index
-			{0, -2, 0}, {-2, 0, 0,}, {0, 0, 0},					//negativ end index
-			devices, context, bins, q);	
-	} 
-	if (axis==1){
-		for (int n=-1; n<3; n++){
-			starts.push_back({2, 1+n, 0, 0});
-			ends.push_back({-2, -2+n, 0, -2,});
-			mask_starts.push_back({2, 1+n, 0, });
-			mask_ends.push_back({-2, -2+n, 0, }); // the masks are 3d sized {X, Y, Z}, we can't have the last (constnat) index on them. 
-		}
-
-		dx_local_shape = {1, Y-3, 1};
-		dx_shape = {Y};
-		velfac_shape = {1, Y-3, 1};
-		velfac_starts = {0, 0, 0};
-		velfac_ends = {0, 0, 0};
-		vel_var_shape = {X, Y, Z, 3};
-		mask_shape = {X, Y, Z};
-		intermediate_shape = {X-starts[1][0] + ends[1][0], Y - starts[1][1] + ends[1][1], Z - starts[1][2] + ends[1][2]};
-
-		dx_local = xt::zeros<double>(dx_local_shape);
-		velfac = xt::zeros<double>(velfac_shape);
-
-		inputs = {cost.data(), dx.data()};
-		outputs = {dx_local.data()};
-		run_broadcast_kernel("mult1d", inputs, outputs, 
-			{Y}, {X,}, {Y-3},					//shapes
-			{1}, {1,}, {0},						//start index
-			{-2}, {-2,}, {0,},					//negativ end index
-			devices, context, bins, q);	
-
-		inputs = {zero.data(), cosu.data()};
-		outputs = {velfac.data()};
-		run_broadcast_kernel("add1d", inputs, outputs, 
-			{1}, {X,}, {Y-3},					//shapes
-			{0}, {1,}, {0},						//start index
-			{0}, {-2,}, {0},					//negativ end index
-			devices, context, bins, q);	
-	} 
-	if (axis==2){
-		for (int n=-1; n<3; n++){
-			starts.push_back({2, 2, 1+n, 0});
-			ends.push_back({-2, -2, -2+n, -2,});
-			mask_starts.push_back({2, 2, 1+n, });
-			mask_ends.push_back({-2, -2, -2+n, }); // the masks are 3d sized {X, Y, Z}, we can't have the last (constnat) index on them. 
-		}
-
-		dx_local_shape = {1, 1, Z-1};
-		dx_shape = {Z};
-		velfac_shape = {1};
-		velfac_starts = {0,};
-		velfac_ends = {0,};
-		vel_var_shape = {X, Y, Z+2, 3}; //This is gonna be needed for z-padding.
-		mask_shape = {X, Y, Z+2};
-		intermediate_shape = {X-starts[1][0] + ends[1][0], Y - starts[1][1] + ends[1][1], Z + 2 - starts[1][2] + ends[1][2]};
-
-		dx_local = xt::zeros<double>(dx_local_shape);
-		velfac = xt::ones<double>(velfac_shape);
-
-		inputs = {zero.data(), dx.data()};
-		outputs = {dx_local.data()};
-		run_broadcast_kernel("add1d", inputs, outputs, 
-			{1}, {Z,}, {Z-1},					//shapes
-			{0}, {0}, {0,},						//start index
-			{0}, {-1,}, {0,},					//negativ end index
-			devices, context, bins, q);	
-
-		vel_pad_temp = xt::zeros<double>(vel_var_shape);
-		var_pad_temp = xt::zeros<double>(vel_var_shape);
-		mask_pad_temp = xt::zeros<double>(mask_shape);
-
-		inputs = {vel.data(), zero.data()};
-		outputs = {vel_pad_temp.data()};
-		run_broadcast_kernel("add3d", inputs, outputs, 
-			{X, Y, Z, 3}, {1,}, {X, Y, Z+2, 3},					//shapes
-			{0, 0, 0, 0}, {0}, {0, 0, 1, 0},						//start index
-			{0, 0, 0, -2}, {0}, {0, 0, -1, -2},					//negativ end index
-			devices, context, bins, q);	
-
-		std::swap(vel_pad_temp, vel);
-
-		inputs = {var.data(), zero.data()};
-		outputs = {var_pad_temp.data()};
-		run_broadcast_kernel("add3d", inputs, outputs, 
-			{X, Y, Z, 3}, {1,}, {X, Y, Z+2, 3},					//shapes
-			{0, 0, 0, 0}, {0}, {0, 0, 1, 0},						//start index
-			{0, 0, 0, -2}, {0}, {0, 0, -1, -2},					//negativ end index
-			devices, context, bins, q);	
-
-		std::swap(var_pad_temp, var);
-
-		inputs = {mask.data(), zero.data()};
-		outputs = {mask_pad_temp.data()};
-		run_broadcast_kernel("add3d", inputs, outputs, 
-			{X, Y, Z,}, {1,}, {X, Y, Z+2},					//shapes
-			{0, 0, 0,}, {0}, {0, 0, 1,},						//start index
-			{0, 0, 0,}, {0}, {0, 0, -1,},					//negativ end index
-			devices, context, bins, q);	
-
-		std::swap(mask_pad_temp, mask);
-	}
-
-	//start contain start index of the slices. in pyhpc benchark they are called sm1, s, sp1, sp2. starting index of s is then starts[1]
-
-	xt::xarray<double> uCFL = xt::zeros<double>(intermediate_shape);
-	xt::xarray<double> rjp = xt::zeros<double>(intermediate_shape);
-	xt::xarray<double> rj = xt::zeros<double>(intermediate_shape);
-	xt::xarray<double> rjm = xt::zeros<double>(intermediate_shape);
-	xt::xarray<double> cr = xt::zeros<double>(intermediate_shape);
-
-	//ucfl
-	inputs = {velfac.data(), vel.data()};
-	outputs = {uCFL.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
-		velfac_shape, vel_var_shape, intermediate_shape,					//shapes
-		velfac_starts, starts[1], {0, 0, 0},						//start index
-		velfac_ends, ends[1], {0, 0, 0},					//negativ end index
-		devices, context, bins, q);	
-
-	inputs = {uCFL.data(), dx_local.data()};
-	outputs = {uCFL.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
-		intermediate_shape, dx_local_shape, intermediate_shape,					//shapes
-		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//start index
-		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//negativ end index
-		devices, context, bins, q);
-	
-	inputs = {uCFL.data(), zero.data()}; //second input does nothing abs only takes one input. needs to be here because run broadcast kernel is shit
-	outputs = {uCFL.data()};
-	run_broadcast_kernel("abs3d", inputs, outputs, 
-		intermediate_shape, {1}, intermediate_shape,					//shapes
-		{0, 0, 0}, {0}, {0, 0, 0},						//start index
-		{0, 0, 0}, {0}, {0, 0, 0},					//negativ end index
-		devices, context, bins, q);
-
-	// rjp
-	inputs = {var.data(), var.data()};
-	outputs = {rjp.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
-		vel_var_shape, vel_var_shape, intermediate_shape,					//shapes
-		starts[3], starts[2], {0, 0, 0},						//start index
-		ends[3], ends[2], {0, 0, 0},					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {mask.data(), rjp.data()};
-	outputs = {rjp.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
-		mask_shape, intermediate_shape, intermediate_shape,					//shapes
-		mask_starts[2], {0, 0, 0}, {0, 0, 0},						//start index
-		mask_ends[2], {0, 0, 0}, {0, 0, 0},					//negativ end index
-		devices, context, bins, q);
-
-	//rj
-	inputs = {var.data(), var.data()};
-	outputs = {rj.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
-		vel_var_shape, vel_var_shape, intermediate_shape,					//shapes
-		starts[2], starts[1], {0, 0, 0},						//start index
-		ends[2], ends[1], {0, 0, 0},					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {mask.data(), rj.data()};
-	outputs = {rj.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
-		mask_shape, intermediate_shape, intermediate_shape,					//shapes
-		mask_starts[1], {0, 0, 0}, {0, 0, 0},						//start index
-		mask_ends[1], {0, 0, 0}, {0, 0, 0},					//negativ end index
-		devices, context, bins, q);
-
-	//rjm
-	inputs = {var.data(), var.data()};
-	outputs = {rjm.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
-		vel_var_shape, vel_var_shape, intermediate_shape,					//shapes
-		starts[1], starts[0], {0, 0, 0},						//start index
-		ends[1], ends[0], {0, 0, 0},					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {mask.data(), rjm.data()};
-	outputs = {rjm.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
-		mask_shape, intermediate_shape, intermediate_shape,					//shapes
-		mask_starts[0], {0, 0, 0}, {0, 0, 0},						//start index
-		mask_ends[0], {0, 0, 0}, {0, 0, 0},					//negativ end index
-		devices, context, bins, q);
-
-	//unroll cr. some confusing stuff is in here!
-	xt::xarray<double> selection = xt::zeros_like(vel);
-
-	inputs = {vel.data(), zero.data()};
-	outputs = {selection.data()};
-	run_broadcast_kernel("gt3d", inputs, outputs, 
-		vel_var_shape, {1}, vel_var_shape,					//shapes
-		starts[1], {0,}, starts[1],						//start index
-		ends[1], {0,}, ends[1],					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {selection.data(), rjm.data(), rjp.data()};
-	outputs = {cr.data()};
-	run_where_kernel("where3d", inputs, outputs, 
-		vel_var_shape, intermediate_shape, intermediate_shape, intermediate_shape,					//shapes
-		starts[1], {0, 0, 0,}, {0, 0, 0,}, {0, 0, 0,}, 						//start index
-		ends[1], {0, 0, 0}, {0, 0, 0,}, {0, 0, 0,},					//negativ end index
-		devices, context, bins, q);
-
-	xt::xarray<double> eps = xt::ones<double>({1}) * 1e-20;
-	xt::xarray<double> abs_rj = xt::zeros_like(rj);
-
-	inputs = {rj.data(), zero.data()};
-	outputs = {abs_rj.data()};
-	run_broadcast_kernel("abs3d", inputs, outputs, 
-		intermediate_shape, {1}, intermediate_shape,					//shapes
-		{0, 0, 0}, {0,}, {0, 0, 0},						//start index
-		{0, 0, 0}, {0,}, {0, 0, 0},					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {eps.data(), abs_rj.data()};
-	outputs = {selection.data()};
-	run_broadcast_kernel("gt3d", inputs, outputs, 
-		{1}, intermediate_shape, vel_var_shape,					//shapes
-		{0}, {0, 0, 0,}, starts[1],						//start index
-		{0,}, {0, 0, 0,}, ends[1],					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {selection.data(), eps.data(), rj.data()};
-	outputs = {selection.data()};
-	run_where_kernel("where3d", inputs, outputs, 
-		vel_var_shape, {1}, intermediate_shape, vel_var_shape,					//shapes
-		starts[1], {0,}, {0, 0, 0,}, starts[1], 						//start index
-		ends[1], {0,}, {0, 0, 0,}, ends[1],					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {cr.data(), selection.data()};
-	outputs = {cr.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
-		intermediate_shape, vel_var_shape, intermediate_shape,					//shapes
-		{0, 0, 0}, starts[1], {0, 0, 0,}, 						//start index
-		{0, 0, 0}, ends[1], {0, 0, 0,},					//negativ end index
-		devices, context, bins, q);
-
-	// now do limiter on cr
-	xt::xarray<double> cr_temp = xt::zeros_like(cr);
-	
-	inputs = {cr.data(), two.data()};
-	outputs = {cr_temp.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
-		intermediate_shape, {1}, intermediate_shape,					//shapes
-		{0, 0, 0}, {0}, {0, 0, 0,}, 						//start index
-		{0, 0, 0}, {0}, {0, 0, 0,},					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {cr_temp.data(), one.data()};
-	outputs = {cr_temp.data()};
-	run_broadcast_kernel("min3d", inputs, outputs, 
-		intermediate_shape, {1}, intermediate_shape,					//shapes
-		{0, 0, 0}, {0}, {0, 0, 0,}, 						//start index
-		{0, 0, 0}, {0}, {0, 0, 0,},					//negativ end index
-		devices, context, bins, q);
-		
-	inputs = {cr.data(), two.data()};
-	outputs = {cr.data()};
-	run_broadcast_kernel("min3d", inputs, outputs, 
-		intermediate_shape, {1}, intermediate_shape,					//shapes
-		{0, 0, 0}, {0}, {0, 0, 0,}, 						//start index
-		{0, 0, 0}, {0}, {0, 0, 0,},					//negativ end index
-		devices, context, bins, q);
-		
-	inputs = {cr.data(), cr_temp.data()};
-	outputs = {cr.data()};
-	run_broadcast_kernel("max3d", inputs, outputs, 
-		intermediate_shape, intermediate_shape, intermediate_shape,					//shapes
-		{0, 0, 0}, {0, 0 ,0}, {0, 0, 0,}, 						//start index
-		{0, 0, 0}, {0, 0 ,0}, {0, 0, 0,},					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {cr.data(), zero.data()};
-	outputs = {cr.data()};
-	run_broadcast_kernel("max3d", inputs, outputs, 
-		intermediate_shape, {1}, intermediate_shape,					//shapes
-		{0, 0, 0}, {0,}, {0, 0, 0,}, 						//start index
-		{0, 0, 0}, {0,}, {0, 0, 0,},					//negativ end index
-		devices, context, bins, q);
-
-	//compute out value.
-	xt::xarray<double> temp_out = xt::zeros_like(out);
-
-	inputs = {one.data(), cr.data()};
-	outputs = {temp_out.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
-		{1}, intermediate_shape, out_shape,					//shapes
-		{0}, {0, 0, 0}, out_starts, 						//start index
-		{0}, {0, 0, 0}, out_ends,					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {uCFL.data(), cr.data()};
-	outputs = {out.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
-		intermediate_shape, intermediate_shape, out_shape,					//shapes
-		{0, 0, 0}, {0, 0, 0}, out_starts, 						//start index
-		{0, 0, 0}, {0, 0, 0}, out_ends,					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {out.data(), temp_out.data()};
-	outputs = {temp_out.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
-		out_shape, out_shape, out_shape,					//shapes
-		out_starts, out_starts, out_starts, 						//start index
-		out_ends, out_ends, out_ends,					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {velfac.data(), vel.data()}; 	//safe to reuse out again
-	outputs = {out.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
-		velfac_shape, vel_var_shape, out_shape,					//shapes
-		velfac_starts, starts[1], out_starts, 						//start index
-		velfac_ends, ends[1], out_ends,					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {out.data(), zero.data()}; 	
-	outputs = {out.data()};
-	run_broadcast_kernel("abs3d", inputs, outputs, 
-		out_shape, {1}, out_shape,					//shapes
-		out_starts, {0}, out_starts, 						//start index
-		out_ends, {0}, out_ends,					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {out.data(), temp_out.data()}; 	
-	outputs = {out.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
-		out_shape, out_shape, out_shape,					//shapes
-		out_starts, out_starts, out_starts, 						//start index
-		out_ends, out_ends, out_ends,					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {out.data(), rj.data()}; 	
-	outputs = {out.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
-		out_shape, intermediate_shape, out_shape,					//shapes
-		out_starts, {0, 0, 0}, out_starts, 						//start index
-		out_ends, {0, 0, 0}, out_ends,					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {out.data(), two.data()}; 	
-	outputs = {out.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
-		out_shape, {1}, out_shape,					//shapes
-		out_starts, {0}, out_starts, 						//start index
-		out_ends, {0}, out_ends,					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {var.data(), var.data()};	//reuse temp to calculate other term
-	outputs = {temp_out.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
-		vel_var_shape, vel_var_shape, out_shape,					//shapes
-		starts[2], starts[1], out_starts, 						//start index
-		ends[2], ends[1], out_ends,					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {temp_out.data(), vel.data()};
-	outputs = {temp_out.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
-		out_shape, vel_var_shape, out_shape,					//shapes
-		out_starts, starts[1], out_starts, 						//start index
-		out_ends, ends[1], out_ends,					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {temp_out.data(), velfac.data()};
-	outputs = {temp_out.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
-		out_shape, velfac_shape, out_shape,					//shapes
-		out_starts, velfac_starts, out_starts, 						//start index
-		out_ends, velfac_ends, out_ends,					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {temp_out.data(), two.data()};
-	outputs = {temp_out.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
-		out_shape, {1}, out_shape,					//shapes
-		out_starts, {0}, out_starts, 						//start index
-		out_ends, {0}, out_ends,					//negativ end index
-		devices, context, bins, q);
-
-	inputs = {temp_out.data(), out.data()};
-	outputs = {out.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
-		out_shape, out_shape, out_shape,					//shapes
-		out_starts, out_starts, out_starts, 						//start index
-		out_ends, out_ends, out_ends,					//negativ end index
-		devices, context, bins, q);
-
-	if (axis==2){
-		//remeber to swap back the pointers so we didnt mess up the main program memory.
-
-		std::swap(vel, vel_pad_temp);
-		std::swap(var, var_pad_temp);
-		std::swap(mask, mask_pad_temp);
-	}
-}
-
-// Arguments parser
-class ArgParser
-{
-public:
-	ArgParser(int &argc, const char **argv)
-	{
-		for (int i = 1; i < argc; ++i)
-			mTokens.push_back(std::string(argv[i]));
-	}
-	bool getCmdOption(const std::string option, std::string &value) const
-	{
-		std::vector<std::string>::const_iterator itr;
-		itr = std::find(this->mTokens.begin(), this->mTokens.end(), option);
-		if (itr != this->mTokens.end() && ++itr != this->mTokens.end())
-		{
-			value = *itr;
-			return true;
-		}
-		return false;
-	}
-
-private:
-	std::vector<std::string> mTokens;
-};
 
 int main(int argc, const char *argv[])
 {

@@ -1,38 +1,51 @@
-extern "C" void where2d(double* A, double* B, double* C, int* A_stride, int* B_stride, int* C_stride, int* A_offset, int* B_offset, int* C_offset, int A_lin_offset, int B_lin_offset, int C_lin_offset, double* out, int* out_shape, int* out_stride, int* out_offset, int* out_end_offset, int out_lin_offset) {
+extern "C" void where2d(double* A, double* B, double* C, double* out, int A_lin_offset, int B_lin_offset, int C_lin_offset, int out_lin_offset, int* strides_offsets_out, int dim) {
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem0 port = A latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem1 port = B latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
-#pragma HLS INTERFACE m_axi offset = slave bundle = gmem3 port = C latency = 64 num_read_outstanding = \
+#pragma HLS INTERFACE m_axi offset = slave bundle = gmem2 port = C latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
-#pragma HLS INTERFACE m_axi offset = slave bundle = gmem2 port = out latency = 64 num_read_outstanding = \
+#pragma HLS INTERFACE m_axi offset = slave bundle = gmem3 port = out latency = 64 num_read_outstanding = \
+    16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
+#pragma HLS INTERFACE m_axi offset = slave bundle = plmem0 port = strides_offsets_out latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
 
+#pragma HLS INTERFACE m_axi offset = slave bundle = control port = A_lin_offset
+#pragma HLS INTERFACE m_axi offset = slave bundle = control port = B_lin_offset
+#pragma HLS INTERFACE m_axi offset = slave bundle = control port = C_lin_offset
+#pragma HLS INTERFACE m_axi offset = slave bundle = control port = out_lin_offset
+#pragma HLS INTERFACE m_axi offset = slave bundle = control port = dim
 
-#pragma HLS INTERFACE s_axilite port = A bundle = control
-#pragma HLS INTERFACE s_axilite port = A_stride bundle = control
-#pragma HLS INTERFACE s_axilite port = A_offset bundle = control
-#pragma HLS INTERFACE s_axilite port = A_lin_offset bundle = control
-
-#pragma HLS INTERFACE s_axilite port = B bundle = control
-#pragma HLS INTERFACE s_axilite port = B_stride bundle = control
-#pragma HLS INTERFACE s_axilite port = B_offset bundle = control
-#pragma HLS INTERFACE s_axilite port = B_lin_offset bundle = control
-
-#pragma HLS INTERFACE s_axilite port = C bundle = control
-#pragma HLS INTERFACE s_axilite port = C_stride bundle = control
-#pragma HLS INTERFACE s_axilite port = C_offset bundle = control
-#pragma HLS INTERFACE s_axilite port = C_lin_offset bundle = control
-
-#pragma HLS INTERFACE s_axilite port = out bundle = control
-#pragma HLS INTERFACE s_axilite port = out_stride bundle = control
-#pragma HLS INTERFACE s_axilite port = out_offset bundle = control
-#pragma HLS INTERFACE s_axilite port = out_end_offset bundle = control
-#pragma HLS INTERFACE s_axilite port = out_lin_offset bundle = control
-
-#pragma HLS INTERFACE s_axilite port = return bundle = control
 	int O_ind, A_ind, B_ind, C_ind;
 	double A_val, B_val, C_val;
+
+	int A_offset[dim];
+	int B_offset[dim];
+	int C_offset[dim];
+	int out_offset[dim];
+
+	int A_stride[dim];
+	int B_stride[dim];
+	int C_stride[dim];
+	int out_stride[dim];
+
+	int out_end_offset[dim];
+	int out_shape[dim];
+
+	for (int i = 0; i<dim; i++){
+		A_stride[i] = strides_offsets_out[i];
+		B_stride[i] = strides_offsets_out[dim + i];
+		C_stride[i] = strides_offsets_out[2*dim + i];
+		out_stride[i] = strides_offsets_out[3*dim + i];
+
+		A_offset[i] = strides_offsets_out[4*dim + i];
+		B_offset[i] = strides_offsets_out[5*dim + i];
+		C_offset[i] = strides_offsets_out[6*dim + i];
+		out_offset[i] = strides_offsets_out[7*dim + i];
+
+		out_shape[i] = strides_offsets_out[8*dim +i];
+		out_end_offset[i] = strides_offsets_out[9*dim + i];
+	}
 
 	for (int i=(0 + out_offset[0]); i<(out_shape[0] + out_end_offset[0]); i++){
 		for (int j=(0 + out_offset[1]); j<(out_shape[1] + out_end_offset[1]); j++){
@@ -51,23 +64,7 @@ extern "C" void where2d(double* A, double* B, double* C, int* A_stride, int* B_s
 				if (A_val == 0){
 					out[O_ind] = C_val;
 				} 
-				/*else {
-					std::cout << "Something is up. in np where argument 1 should be a boolean. (this is implemented with doubles! (that is bad))\n";
-					std::cout << "(" << i << ", " << j << ", " << k << ", " <<  ")" << std::endl;
-					std::cout << "\t\tO_ind: " << O_ind <<"\t\tO_val: " << out[O_ind] << std::endl;
-					std::cout << "\t\tA_ind: " << A_ind <<"\t\tA_val: " << A_val << std::endl;
-					std::cout << "\t\tB_ind: " << B_ind <<"\t\tB_val: " << B_val << std::endl; 
-					std::cout << "\t\tC_ind: " << C_ind <<"\t\tC_val: " << C_val << std::endl; 
-				*/
-				}
 			}
-/*
-			std::cout << "(" << i << ", " << j << ", " << k << ", "  << ")" << std::endl;
-			std::cout << "\t\tO_ind: " << O_ind <<"\t\tO_val: " << out[O_ind] << std::endl;
-			std::cout << "\t\tA_ind: " << A_ind <<"\t\tA_val: " << A_val << std::endl;
-			std::cout << "\t\tB_ind: " << B_ind <<"\t\tB_val: " << B_val << std::endl; 
-			std::cout << "\t\tC_ind: " << C_ind <<"\t\tC_val: " << C_val << std::endl; 
-*/			
-
 		}
 	}
+}
