@@ -249,6 +249,18 @@ void negotiate_strides(	std::vector<int> A_shape, std::vector<int> &out_shape,
 
 	A_lin_offset_res = A_lin_offset;
 	out_lin_offset_res = out_lin_offset;
+
+	pad_begin(A_stride_res, 0, 4);
+	pad_begin(A_shape, 1, 4);
+	pad_begin(A_offset, 0, 4);
+	pad_begin(A_end_offset, 0, 4);
+
+	pad_begin(out_stride_res, 0, 4);
+	pad_begin(out_shape, 1, 4);
+	pad_begin(out_offset, 0, 4);
+	pad_begin(out_end_offset, 0, 4);
+
+	out_dim = 4;
 }
 
 int next_largets_factor_2(int n){
@@ -343,7 +355,7 @@ void run_broadcast_kernel(std::string kernel_name,
 	std::cout << "Output size: " << output_data_size << std::endl;
 */
 	// [strides] [offsets] [out shape] [out end offset]
-	// 3*D      + 3D      + D         + D
+	// 3*D      + 4d      + D         + D
 	// Total length is 8D where D is dimension of output
 	std::vector<int> strides_offsets(8 * dimensions);
 
@@ -690,7 +702,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 			starts.push_back({1 + n, 2, 0, 0});
 			ends.push_back({-2 + n, -2 , 0, -2});
 			mask_starts.push_back({1 + n, 2, 0, });
-			mask_ends.push_back({-2 + n, -2 , 0, }); // the masks are 3d sized {X, Y, Z}, we can't have the last (constnat) index on them. 
+			mask_ends.push_back({-2 + n, -2 , 0, }); // the masks are 4d sized {X, Y, Z}, we can't have the last (constnat) index on them. 
 		}
 
 		dx_local_shape = {X-3, Y-4, 1};
@@ -707,7 +719,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 		inputs = {cost.data(), dx.data()};
 		outputs = {dx_local.data()};
-		run_broadcast_kernel("mult2d", inputs, outputs, 
+		run_broadcast_kernel("mult4d", inputs, outputs, 
 			{1, Y, 1}, {X, 1 ,1 }, dx_local_shape,					//shapes
 			{0, 2, 0}, {1, 0, 0}, {0, 0, 0},						//start index
 			{0, -2, 0}, {-2, 0, 0,}, {0, 0, 0},					//negativ end index
@@ -718,7 +730,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 			starts.push_back({2, 1+n, 0, 0});
 			ends.push_back({-2, -2+n, 0, -2,});
 			mask_starts.push_back({2, 1+n, 0, });
-			mask_ends.push_back({-2, -2+n, 0, }); // the masks are 3d sized {X, Y, Z}, we can't have the last (constnat) index on them. 
+			mask_ends.push_back({-2, -2+n, 0, }); // the masks are 4d sized {X, Y, Z}, we can't have the last (constnat) index on them. 
 		}
 
 		dx_local_shape = {1, Y-3, 1};
@@ -735,7 +747,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 		inputs = {cost.data(), dx.data()};
 		outputs = {dx_local.data()};
-		run_broadcast_kernel("mult1d", inputs, outputs, 
+		run_broadcast_kernel("mult4d", inputs, outputs, 
 			{Y}, {X,}, {Y-3},					//shapes
 			{1}, {1,}, {0},						//start index
 			{-2}, {-2,}, {0,},					//negativ end index
@@ -743,7 +755,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 		inputs = {zero.data(), cosu.data()};
 		outputs = {velfac.data()};
-		run_broadcast_kernel("add1d", inputs, outputs, 
+		run_broadcast_kernel("add4d", inputs, outputs, 
 			{1}, {X,}, {Y-3},					//shapes
 			{0}, {1,}, {0},						//start index
 			{0}, {-2,}, {0},					//negativ end index
@@ -754,7 +766,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 			starts.push_back({2, 2, 1+n, 0});
 			ends.push_back({-2, -2, -2+n, -2,});
 			mask_starts.push_back({2, 2, 1+n, });
-			mask_ends.push_back({-2, -2, -2+n, }); // the masks are 3d sized {X, Y, Z}, we can't have the last (constnat) index on them. 
+			mask_ends.push_back({-2, -2, -2+n, }); // the masks are 4d sized {X, Y, Z}, we can't have the last (constnat) index on them. 
 		}
 
 		dx_local_shape = {1, 1, Z-1};
@@ -771,7 +783,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 		inputs = {zero.data(), dx.data()};
 		outputs = {dx_local.data()};
-		run_broadcast_kernel("add1d", inputs, outputs, 
+		run_broadcast_kernel("add4d", inputs, outputs, 
 			{1}, {Z,}, {Z-1},					//shapes
 			{0}, {0}, {0,},						//start index
 			{0}, {-1,}, {0,},					//negativ end index
@@ -783,7 +795,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 		inputs = {vel.data(), zero.data()};
 		outputs = {vel_pad_temp.data()};
-		run_broadcast_kernel("add3d", inputs, outputs, 
+		run_broadcast_kernel("add4d", inputs, outputs, 
 			{X, Y, Z, 3}, {1,}, {X, Y, Z+2, 3},					//shapes
 			{0, 0, 0, 0}, {0}, {0, 0, 1, 0},						//start index
 			{0, 0, 0, -2}, {0}, {0, 0, -1, -2},					//negativ end index
@@ -793,7 +805,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 		inputs = {var.data(), zero.data()};
 		outputs = {var_pad_temp.data()};
-		run_broadcast_kernel("add3d", inputs, outputs, 
+		run_broadcast_kernel("add4d", inputs, outputs, 
 			{X, Y, Z, 3}, {1,}, {X, Y, Z+2, 3},					//shapes
 			{0, 0, 0, 0}, {0}, {0, 0, 1, 0},						//start index
 			{0, 0, 0, -2}, {0}, {0, 0, -1, -2},					//negativ end index
@@ -803,7 +815,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 		inputs = {mask.data(), zero.data()};
 		outputs = {mask_pad_temp.data()};
-		run_broadcast_kernel("add3d", inputs, outputs, 
+		run_broadcast_kernel("add4d", inputs, outputs, 
 			{X, Y, Z,}, {1,}, {X, Y, Z+2},					//shapes
 			{0, 0, 0,}, {0}, {0, 0, 1,},						//start index
 			{0, 0, 0,}, {0}, {0, 0, -1,},					//negativ end index
@@ -823,7 +835,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	//ucfl
 	inputs = {velfac.data(), vel.data()};
 	outputs = {uCFL.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		velfac_shape, vel_var_shape, intermediate_shape,					//shapes
 		velfac_starts, starts[1], {0, 0, 0},						//start index
 		velfac_ends, ends[1], {0, 0, 0},					//negativ end index
@@ -831,7 +843,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {uCFL.data(), dx_local.data()};
 	outputs = {uCFL.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		intermediate_shape, dx_local_shape, intermediate_shape,					//shapes
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//start index
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//negativ end index
@@ -839,7 +851,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	
 	inputs = {uCFL.data(), zero.data()}; //second input does nothing abs only takes one input. needs to be here because run broadcast kernel is shit
 	outputs = {uCFL.data()};
-	run_broadcast_kernel("abs3d", inputs, outputs, 
+	run_broadcast_kernel("abs4d", inputs, outputs, 
 		intermediate_shape, {1}, intermediate_shape,					//shapes
 		{0, 0, 0}, {0}, {0, 0, 0},						//start index
 		{0, 0, 0}, {0}, {0, 0, 0},					//negativ end index
@@ -848,7 +860,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	// rjp
 	inputs = {var.data(), var.data()};
 	outputs = {rjp.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		vel_var_shape, vel_var_shape, intermediate_shape,					//shapes
 		starts[3], starts[2], {0, 0, 0},						//start index
 		ends[3], ends[2], {0, 0, 0},					//negativ end index
@@ -856,7 +868,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {mask.data(), rjp.data()};
 	outputs = {rjp.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		mask_shape, intermediate_shape, intermediate_shape,					//shapes
 		mask_starts[2], {0, 0, 0}, {0, 0, 0},						//start index
 		mask_ends[2], {0, 0, 0}, {0, 0, 0},					//negativ end index
@@ -865,7 +877,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	//rj
 	inputs = {var.data(), var.data()};
 	outputs = {rj.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		vel_var_shape, vel_var_shape, intermediate_shape,					//shapes
 		starts[2], starts[1], {0, 0, 0},						//start index
 		ends[2], ends[1], {0, 0, 0},					//negativ end index
@@ -873,7 +885,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {mask.data(), rj.data()};
 	outputs = {rj.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		mask_shape, intermediate_shape, intermediate_shape,					//shapes
 		mask_starts[1], {0, 0, 0}, {0, 0, 0},						//start index
 		mask_ends[1], {0, 0, 0}, {0, 0, 0},					//negativ end index
@@ -882,7 +894,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	//rjm
 	inputs = {var.data(), var.data()};
 	outputs = {rjm.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		vel_var_shape, vel_var_shape, intermediate_shape,					//shapes
 		starts[1], starts[0], {0, 0, 0},						//start index
 		ends[1], ends[0], {0, 0, 0},					//negativ end index
@@ -890,7 +902,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {mask.data(), rjm.data()};
 	outputs = {rjm.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		mask_shape, intermediate_shape, intermediate_shape,					//shapes
 		mask_starts[0], {0, 0, 0}, {0, 0, 0},						//start index
 		mask_ends[0], {0, 0, 0}, {0, 0, 0},					//negativ end index
@@ -901,7 +913,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {vel.data(), zero.data()};
 	outputs = {selection.data()};
-	run_broadcast_kernel("gt3d", inputs, outputs, 
+	run_broadcast_kernel("gt4d", inputs, outputs, 
 		vel_var_shape, {1}, vel_var_shape,					//shapes
 		starts[1], {0,}, starts[1],						//start index
 		ends[1], {0,}, ends[1],					//negativ end index
@@ -909,7 +921,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {selection.data(), rjm.data(), rjp.data()};
 	outputs = {cr.data()};
-	run_where_kernel("where3d", inputs, outputs, 
+	run_where_kernel("where4d", inputs, outputs, 
 		vel_var_shape, intermediate_shape, intermediate_shape, intermediate_shape,					//shapes
 		starts[1], {0, 0, 0,}, {0, 0, 0,}, {0, 0, 0,}, 						//start index
 		ends[1], {0, 0, 0}, {0, 0, 0,}, {0, 0, 0,},					//negativ end index
@@ -920,7 +932,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {rj.data(), zero.data()};
 	outputs = {abs_rj.data()};
-	run_broadcast_kernel("abs3d", inputs, outputs, 
+	run_broadcast_kernel("abs4d", inputs, outputs, 
 		intermediate_shape, {1}, intermediate_shape,					//shapes
 		{0, 0, 0}, {0,}, {0, 0, 0},						//start index
 		{0, 0, 0}, {0,}, {0, 0, 0},					//negativ end index
@@ -928,7 +940,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {eps.data(), abs_rj.data()};
 	outputs = {selection.data()};
-	run_broadcast_kernel("gt3d", inputs, outputs, 
+	run_broadcast_kernel("gt4d", inputs, outputs, 
 		{1}, intermediate_shape, vel_var_shape,					//shapes
 		{0}, {0, 0, 0,}, starts[1],						//start index
 		{0,}, {0, 0, 0,}, ends[1],					//negativ end index
@@ -936,7 +948,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {selection.data(), eps.data(), rj.data()};
 	outputs = {selection.data()};
-	run_where_kernel("where3d", inputs, outputs, 
+	run_where_kernel("where4d", inputs, outputs, 
 		vel_var_shape, {1}, intermediate_shape, vel_var_shape,					//shapes
 		starts[1], {0,}, {0, 0, 0,}, starts[1], 						//start index
 		ends[1], {0,}, {0, 0, 0,}, ends[1],					//negativ end index
@@ -944,7 +956,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {cr.data(), selection.data()};
 	outputs = {cr.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		intermediate_shape, vel_var_shape, intermediate_shape,					//shapes
 		{0, 0, 0}, starts[1], {0, 0, 0,}, 						//start index
 		{0, 0, 0}, ends[1], {0, 0, 0,},					//negativ end index
@@ -955,7 +967,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	
 	inputs = {cr.data(), two.data()};
 	outputs = {cr_temp.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		intermediate_shape, {1}, intermediate_shape,					//shapes
 		{0, 0, 0}, {0}, {0, 0, 0,}, 						//start index
 		{0, 0, 0}, {0}, {0, 0, 0,},					//negativ end index
@@ -963,7 +975,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {cr_temp.data(), one.data()};
 	outputs = {cr_temp.data()};
-	run_broadcast_kernel("min3d", inputs, outputs, 
+	run_broadcast_kernel("min4d", inputs, outputs, 
 		intermediate_shape, {1}, intermediate_shape,					//shapes
 		{0, 0, 0}, {0}, {0, 0, 0,}, 						//start index
 		{0, 0, 0}, {0}, {0, 0, 0,},					//negativ end index
@@ -971,7 +983,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 		
 	inputs = {cr.data(), two.data()};
 	outputs = {cr.data()};
-	run_broadcast_kernel("min3d", inputs, outputs, 
+	run_broadcast_kernel("min4d", inputs, outputs, 
 		intermediate_shape, {1}, intermediate_shape,					//shapes
 		{0, 0, 0}, {0}, {0, 0, 0,}, 						//start index
 		{0, 0, 0}, {0}, {0, 0, 0,},					//negativ end index
@@ -979,7 +991,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 		
 	inputs = {cr.data(), cr_temp.data()};
 	outputs = {cr.data()};
-	run_broadcast_kernel("max3d", inputs, outputs, 
+	run_broadcast_kernel("max4d", inputs, outputs, 
 		intermediate_shape, intermediate_shape, intermediate_shape,					//shapes
 		{0, 0, 0}, {0, 0 ,0}, {0, 0, 0,}, 						//start index
 		{0, 0, 0}, {0, 0 ,0}, {0, 0, 0,},					//negativ end index
@@ -987,7 +999,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {cr.data(), zero.data()};
 	outputs = {cr.data()};
-	run_broadcast_kernel("max3d", inputs, outputs, 
+	run_broadcast_kernel("max4d", inputs, outputs, 
 		intermediate_shape, {1}, intermediate_shape,					//shapes
 		{0, 0, 0}, {0,}, {0, 0, 0,}, 						//start index
 		{0, 0, 0}, {0,}, {0, 0, 0,},					//negativ end index
@@ -998,7 +1010,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {one.data(), cr.data()};
 	outputs = {temp_out.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{1}, intermediate_shape, out_shape,					//shapes
 		{0}, {0, 0, 0}, out_starts, 						//start index
 		{0}, {0, 0, 0}, out_ends,					//negativ end index
@@ -1006,7 +1018,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {uCFL.data(), cr.data()};
 	outputs = {out.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		intermediate_shape, intermediate_shape, out_shape,					//shapes
 		{0, 0, 0}, {0, 0, 0}, out_starts, 						//start index
 		{0, 0, 0}, {0, 0, 0}, out_ends,					//negativ end index
@@ -1014,7 +1026,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {out.data(), temp_out.data()};
 	outputs = {temp_out.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		out_shape, out_shape, out_shape,					//shapes
 		out_starts, out_starts, out_starts, 						//start index
 		out_ends, out_ends, out_ends,					//negativ end index
@@ -1022,7 +1034,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {velfac.data(), vel.data()}; 	//safe to reuse out again
 	outputs = {out.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		velfac_shape, vel_var_shape, out_shape,					//shapes
 		velfac_starts, starts[1], out_starts, 						//start index
 		velfac_ends, ends[1], out_ends,					//negativ end index
@@ -1030,7 +1042,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {out.data(), zero.data()}; 	
 	outputs = {out.data()};
-	run_broadcast_kernel("abs3d", inputs, outputs, 
+	run_broadcast_kernel("abs4d", inputs, outputs, 
 		out_shape, {1}, out_shape,					//shapes
 		out_starts, {0}, out_starts, 						//start index
 		out_ends, {0}, out_ends,					//negativ end index
@@ -1038,7 +1050,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {out.data(), temp_out.data()}; 	
 	outputs = {out.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		out_shape, out_shape, out_shape,					//shapes
 		out_starts, out_starts, out_starts, 						//start index
 		out_ends, out_ends, out_ends,					//negativ end index
@@ -1046,7 +1058,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {out.data(), rj.data()}; 	
 	outputs = {out.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		out_shape, intermediate_shape, out_shape,					//shapes
 		out_starts, {0, 0, 0}, out_starts, 						//start index
 		out_ends, {0, 0, 0}, out_ends,					//negativ end index
@@ -1054,7 +1066,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {out.data(), two.data()}; 	
 	outputs = {out.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		out_shape, {1}, out_shape,					//shapes
 		out_starts, {0}, out_starts, 						//start index
 		out_ends, {0}, out_ends,					//negativ end index
@@ -1062,7 +1074,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {var.data(), var.data()};	//reuse temp to calculate other term
 	outputs = {temp_out.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		vel_var_shape, vel_var_shape, out_shape,					//shapes
 		starts[2], starts[1], out_starts, 						//start index
 		ends[2], ends[1], out_ends,					//negativ end index
@@ -1070,7 +1082,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {temp_out.data(), vel.data()};
 	outputs = {temp_out.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		out_shape, vel_var_shape, out_shape,					//shapes
 		out_starts, starts[1], out_starts, 						//start index
 		out_ends, ends[1], out_ends,					//negativ end index
@@ -1078,7 +1090,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {temp_out.data(), velfac.data()};
 	outputs = {temp_out.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		out_shape, velfac_shape, out_shape,					//shapes
 		out_starts, velfac_starts, out_starts, 						//start index
 		out_ends, velfac_ends, out_ends,					//negativ end index
@@ -1086,7 +1098,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {temp_out.data(), two.data()};
 	outputs = {temp_out.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		out_shape, {1}, out_shape,					//shapes
 		out_starts, {0}, out_starts, 						//start index
 		out_ends, {0}, out_ends,					//negativ end index
@@ -1094,7 +1106,7 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 
 	inputs = {temp_out.data(), out.data()};
 	outputs = {out.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		out_shape, out_shape, out_shape,					//shapes
 		out_starts, out_starts, out_starts, 						//start index
 		out_ends, out_ends, out_ends,					//negativ end index
@@ -1144,12 +1156,6 @@ int main(int argc, const char *argv[])
 	cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE);
 	cl::Program::Binaries bins = xcl::import_binary_file(xclbin_path);
 	devices.resize(1);
-
-	int size_4d = X * Y * Z * 3;
-	int size_3d = X * Y * Z;
-	int size_2d = X * Y;
-	int size_1d_vert = Z;
-	int size_1d_hoz = X; //assert(X == Y)!!!
 
 	xt::xarray<double> u = xt::load_npy<double>("../src/numpy_files/u.npy");
 	xt::xarray<double> v = xt::load_npy<double>("../src/numpy_files/v.npy");
@@ -1212,7 +1218,7 @@ int main(int argc, const char *argv[])
 	//kbot
 	inputs = {kbot.data(), one.data()};
 	outputs = {ks.data()};
-	run_broadcast_kernel("sub2d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{X, Y}, {1}, {X-4, Y-4,},			//shapes
 		{2, 2}, {0}, {0, 0},			//start index
 		{-2, -2}, {0}, {0, 0}, 			//negativ end index
@@ -1221,7 +1227,7 @@ int main(int argc, const char *argv[])
 	//sqrttke
 	inputs = {tke.data(), zero.data()};
 	outputs = {sqrttke.data()};
-	run_broadcast_kernel("max3d", inputs, outputs, 
+	run_broadcast_kernel("max4d", inputs, outputs, 
 		{X, Y, Z, 3}, {1}, {X, Y, Z,},			//shapes
 		{0, 0, 0, 0}, {0}, {0, 0, 0,},			//start index
 		{0, 0, 0, -2}, {0}, {0, 0, 0}, 			//negativ end index
@@ -1229,7 +1235,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {sqrttke.data(), zero.data()}; //sqrt takes one argument. zero does nothing
 	outputs = {sqrttke.data()};
-	run_broadcast_kernel("sqrt3d", inputs, outputs, 
+	run_broadcast_kernel("sqrt4d", inputs, outputs, 
 		{X, Y, Z,}, {1}, {X, Y, Z,},			//shapes
 		{0, 0, 0,}, {0}, {0, 0, 0,},			//start index
 		{0, 0, 0,}, {0}, {0, 0, 0}, 			//negativ end index
@@ -1238,7 +1244,7 @@ int main(int argc, const char *argv[])
 	//delta
 	inputs = {kappaM.data(), kappaM.data()};
 	outputs = {delta.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X, Y, Z}, {X,Y, Z}, {X-4, Y-4, Z},			//shapes
 		{2, 2, 0}, {2, 2, 1}, {0, 0, 0,},			//start index
 		{-2, -2, -1}, {-2, -2, 0}, {0, 0, -1}, 		//negativ end index
@@ -1248,7 +1254,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {half.data(), delta.data()};
 	outputs = {delta.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},			//shapes
 		{0,}, {0, 0, 0}, {0, 0, 0,},				//start index
 		{0,}, {0, 0, -1}, {0, 0, -1}, 				//negativ end index
@@ -1256,7 +1262,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {delta.data(), dzt.data()};
 	outputs = {delta.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},			//shapes
 		{0, 0, 0}, {1}, {0, 0, 0,},					//start index
 		{0, 0, -1}, {0}, {0, 0, -1}, 				//negativ end index
@@ -1265,7 +1271,7 @@ int main(int argc, const char *argv[])
 	//a_tri
 	inputs = {zero.data(), delta.data(), };
 	outputs = {a_tri.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},			//shapes
 		{0}, {0,0,0}, {0, 0, 1,},					//start index
 		{0}, {0,0,-2}, {0, 0, -1}, 					//negativ end index
@@ -1273,7 +1279,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {a_tri.data(), dzw.data(), };
 	outputs = {a_tri.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},			//shapes
 		{0, 0, 1}, {1}, {0, 0, 1,},					//start index
 		{0, 0, -1}, {-1}, {0, 0, -1}, 				//negativ end index
@@ -1281,7 +1287,7 @@ int main(int argc, const char *argv[])
 	
 	inputs = {zero.data(), delta.data(), };
 	outputs = {a_tri.data()};
-	run_broadcast_kernel("sub2d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},			//shapes
 		{0}, {0, 0, Z-2}, {0, 0, Z-1,},				//start index
 		{0}, {0, 0, -1}, {0, 0, 0}, 				//negativ end index
@@ -1289,7 +1295,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {a_tri.data(), two.data(), };
 	outputs = {a_tri.data()};
-	run_broadcast_kernel("mult2d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
 		{0, 0, Z-1}, {0}, {0, 0, Z-1,},				//start index
 		{0, 0, 0}, {0}, {0, 0, 0}, 					//negativ end index
@@ -1297,7 +1303,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {a_tri.data(), dzw.data(), };
 	outputs = {a_tri.data()};
-	run_broadcast_kernel("div2d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},			//shapes
 		{0, 0, Z-1}, {Z-1}, {0, 0, Z-1,},			//start index
 		{0, 0, 0}, {0}, {0, 0, 0}, 					//negativ end index
@@ -1307,14 +1313,14 @@ int main(int argc, const char *argv[])
 	xt::xarray<double> b_tri_tmp = xt::zeros<double>({X-4, Y-4, Z});
 	inputs = {delta.data(), delta.data() };
 	outputs = {b_tri_tmp.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},//shapes
 		{0, 0, 1}, {0, 0, 0}, {0, 0, 1,},			//start index
 		{0, 0, -1}, {0, 0, -2}, {0, 0, -1},			//negativ end index
 		devices, context, bins, q);
 	inputs = {b_tri_tmp.data(), dzw.data() };
 	outputs = {b_tri_tmp.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},			//shapes
 		{0, 0, 1}, {1}, {0, 0, 1,},					//start index
 		{0, 0, -1}, {-1}, {0, 0, -1}, 				//negativ end index
@@ -1322,7 +1328,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {b_tri_tmp.data(), one.data() };
 	outputs = {b_tri.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
 		{0, 0, 1}, {0}, {0, 0, 1,},					//start index
 		{0, 0, -1}, {0}, {0, 0, -1}, 				//negativ end index
@@ -1330,7 +1336,7 @@ int main(int argc, const char *argv[])
 	
 	inputs = {sqrttke.data(), mxl.data() };
 	outputs = {b_tri_tmp.data()}; //reuse tmp array as we have move intermediate result back to b_tri
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z}, {X-4, Y-4, Z},	//shapes
 		{2, 2, 1}, {2, 2, 1}, {0, 0, 1,},			//start index
 		{-2, -2, -1}, {-2, -2, -1}, {0, 0, -1},		//negativ end index
@@ -1340,7 +1346,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {b_tri_tmp.data(), c_eps_hack.data() };
 	outputs = {b_tri_tmp.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
 		{0, 0, 1}, {0}, {0, 0, 1,},					//start index
 		{0, 0, -1}, {0}, {0, 0, -1},				//negativ end index
@@ -1348,7 +1354,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {b_tri.data(), b_tri_tmp.data() };
 	outputs = {b_tri.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},//shapes
 		{0, 0, 1}, {0, 0, 1}, {0, 0, 1,},			//start index
 		{0, 0, -1}, {0, 0, -1}, {0, 0, -1},			//negativ end index
@@ -1357,7 +1363,7 @@ int main(int argc, const char *argv[])
 	//b_tri last index only.
 	inputs = {delta.data(), dzw.data() };
 	outputs = {b_tri_tmp.data()};
-	run_broadcast_kernel("div2d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},			//shapes
 		{0, 0, Z-2}, {Z-1}, {0, 0, Z-1},			//start index
 		{0, 0, -1}, {0}, {0, 0, 0},					//negativ end index
@@ -1365,7 +1371,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {b_tri_tmp.data(), two.data() };
 	outputs = {b_tri_tmp.data()};
-	run_broadcast_kernel("mult2d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
 		{0, 0, Z-1}, {0}, {0, 0, Z-1},				//start index
 		{0, 0, 0}, {0}, {0, 0, 0},					//negativ end index
@@ -1373,7 +1379,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {b_tri_tmp.data(), one.data() };
 	outputs = {b_tri.data()};
-	run_broadcast_kernel("add2d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
 		{0, 0, Z-1}, {0}, {0, 0, Z-1},				//start index
 		{0, 0, 0}, {0}, {0, 0, 0},					//negativ end index
@@ -1381,7 +1387,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {sqrttke.data(), mxl.data() };
 	outputs = {b_tri_tmp.data()}; //reuse tmp array as we have move intermediate result back to b_tri
-	run_broadcast_kernel("div2d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z}, {X-4, Y-4, Z},		//shapes
 		{2, 2, Z-1}, {2, 2, Z-1}, {0, 0, Z-1,},		//start index
 		{-2, -2, 0}, {-2, -2, 0}, {0, 0, 0},		//negativ end index
@@ -1389,7 +1395,7 @@ int main(int argc, const char *argv[])
 	
 	inputs = {b_tri_tmp.data(), c_eps_hack.data() };
 	outputs = {b_tri_tmp.data()};
-	run_broadcast_kernel("mult2d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
 		{0, 0, Z-1}, {0}, {0, 0, Z-1,},				//start index
 		{0, 0, 0}, {0}, {0, 0, 0},					//negativ end index
@@ -1397,7 +1403,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {b_tri.data(), b_tri_tmp.data() };
 	outputs = {b_tri.data()};
-	run_broadcast_kernel("add2d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},//shapes
 		{0, 0, Z-1}, {0, 0, Z-1}, {0, 0, Z-1,},		//start index
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},			//negativ end index
@@ -1406,7 +1412,7 @@ int main(int argc, const char *argv[])
 	//b_tri_edge
 	inputs = {delta.data(), dzw.data() };
 	outputs = {b_tri_edge.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},//shapes
 		{0, 0, 0}, {0}, {0, 0, 0},		//start index
 		{0, 0, 0}, {0}, {0, 0, 0},			//negativ end index
@@ -1414,7 +1420,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {b_tri_edge.data(), one.data() };
 	outputs = {b_tri_edge.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},//shapes
 		{0, 0, 0}, {0}, {0, 0, 0},		//start index
 		{0, 0, 0}, {0}, {0, 0, 0},			//negativ end index
@@ -1423,7 +1429,7 @@ int main(int argc, const char *argv[])
 	xt::xarray<double> b_tri_edge_tmp = xt::zeros_like(b_tri_edge);
 	inputs = {sqrttke.data(), mxl.data() };
 	outputs = {b_tri_edge_tmp.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z}, {X-4, Y-4, Z},//shapes
 		{2, 2, 0}, {2, 2, 0}, {0, 0, 0},		//start index
 		{-2, -2, 0}, {-2, -2, 0}, {0, 0, 0},			//negativ end index
@@ -1431,7 +1437,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {b_tri_edge_tmp.data(), c_eps_hack.data() };
 	outputs = {b_tri_edge_tmp.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},//shapes
 		{0, 0, 0}, {0}, {0, 0, 0},		//start index
 		{0, 0, 0}, {0}, {0, 0, 0},			//negativ end index
@@ -1439,7 +1445,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {b_tri_edge_tmp.data(), b_tri_edge.data() };
 	outputs = {b_tri_edge.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},//shapes
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},		//start index
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},			//negativ end index
@@ -1448,7 +1454,7 @@ int main(int argc, const char *argv[])
 	//c_tri
 	inputs = {zero.data(), delta.data() };
 	outputs = {c_tri.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},			//shapes
 		{0}, {0, 0, 0}, {0, 0, 0,},					//start index
 		{0}, {0, 0, -1}, {0, 0, -1},				//negativ end index
@@ -1456,7 +1462,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {c_tri.data(), dzw.data() };
 	outputs = {c_tri.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {Z}, {X-4, Y-4, Z},			//shapes
 		{0, 0, 0}, {0}, {0, 0, 0,},					//start index
 		{0, 0, -1}, {-1}, {0, 0, -1},				//negativ end index
@@ -1466,7 +1472,7 @@ int main(int argc, const char *argv[])
 	//d_tri	
 	inputs = {tke.data(), forc.data() };
 	outputs = {d_tri.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X, Y, Z, 3}, {X, Y, Z,}, {X-4, Y-4, Z, },	//shapes
 		{2, 2, 0, 0}, {2, 2, 0,}, {0, 0, 0,},		//start index
 		{-2, -2, 0, -2}, {-2, -2, 0,}, {0, 0, 0,},	//negativ end index
@@ -1476,7 +1482,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {forc_tke_surface.data(), dzw.data() };
 	outputs = {d_tri_tmp.data()};
-	run_broadcast_kernel("div2d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y,}, {Z}, {X-4, Y-4,Z} ,					//shapes
 		{2, 2,}, {Z-1}, {0, 0, Z-1},					//start index
 		{-2, -2,}, {0}, {0, 0, 0},						//negativ end index
@@ -1484,7 +1490,7 @@ int main(int argc, const char *argv[])
 	
 	inputs = {d_tri_tmp.data(), two.data() };
 	outputs = {d_tri_tmp.data()};
-	run_broadcast_kernel("mult2d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},					//shapes
 		{0, 0, Z-1}, {0}, {0, 0, Z-1},					//start index
 		{0, 0, 0}, {0}, {0, 0, 0},						//negativ end index
@@ -1492,7 +1498,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {d_tri_tmp.data(), d_tri.data() };
 	outputs = {d_tri.data()};
-	run_broadcast_kernel("add2d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},			//shapes
 		{0, 0, Z-1}, {0, 0, Z-1}, {0, 0, Z-1},					//start index
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
@@ -1505,7 +1511,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {ks.data(), zero.data() };
 	outputs = {land_mask.data()};
-	run_broadcast_kernel("get2d", inputs, outputs, 
+	run_broadcast_kernel("get4d", inputs, outputs, 
 		{X-4, Y-4}, {1}, {X-4, Y-4},					//shapes
 		{0, 0}, {0}, {0, 0},					//start index
 		{0, 0}, {0}, {0, 0},						//negativ end index
@@ -1514,7 +1520,7 @@ int main(int argc, const char *argv[])
 	xt::xarray<double> Z_dim_arange = xt::arange(Z);
 	inputs = {Z_dim_arange.data(), ks.data()};
 	outputs = {edge_mask.data()};
-	run_broadcast_kernel("eet3d", inputs, outputs, 
+	run_broadcast_kernel("eet4d", inputs, outputs, 
 		{1, 1, Z}, {X-4, Y-4, 1}, {X-4, Y-4, Z},					//shapes
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//start index
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
@@ -1523,7 +1529,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {land_mask.data(), edge_mask.data()};
 	outputs = {edge_mask.data()};
-	run_broadcast_kernel("and3d", inputs, outputs, 
+	run_broadcast_kernel("and4d", inputs, outputs, 
 		{X-4, Y-4, 1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},					//shapes
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//start index
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
@@ -1532,7 +1538,7 @@ int main(int argc, const char *argv[])
 	
 	inputs = {Z_dim_arange.data(), ks.data()};
 	outputs = {water_mask.data()};
-	run_broadcast_kernel("get3d", inputs, outputs, 
+	run_broadcast_kernel("get4d", inputs, outputs, 
 		{1, 1, Z}, {X-4, Y-4, 1}, {X-4, Y-4, Z},					//shapes
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//start index
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
@@ -1540,7 +1546,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {land_mask.data(), water_mask.data()};
 	outputs = {water_mask.data()};
-	run_broadcast_kernel("and3d", inputs, outputs, 
+	run_broadcast_kernel("and4d", inputs, outputs, 
 		{X-4, Y-4, 1}, {X-4, Y-4, Z}, {X-4, Y-4, Z},					//shapes
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//start index
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
@@ -1549,7 +1555,7 @@ int main(int argc, const char *argv[])
 	//apply mask to tridiagonals
 	inputs = {a_tri.data(), water_mask.data()};
 	outputs = {a_tri.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},					//shapes
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//start index
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
@@ -1559,7 +1565,7 @@ int main(int argc, const char *argv[])
 	
 	inputs = {edge_mask.data(), zero.data()}; //not op actually takes 1 operand. the zero in this case is noop and be anything!
 	outputs = {not_edge_mask.data()};
-	run_broadcast_kernel("not3d", inputs, outputs, 
+	run_broadcast_kernel("not4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},					//shapes
 		{0, 0, 0}, {0, }, {0, 0, 0},					//start index
 		{0, 0, 0}, {0, }, {0, 0, 0},						//negativ end index
@@ -1567,7 +1573,7 @@ int main(int argc, const char *argv[])
 	
 	inputs = {not_edge_mask.data(), a_tri.data()};
 	outputs = {a_tri.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},			//shapes
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//start index
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
@@ -1575,7 +1581,7 @@ int main(int argc, const char *argv[])
 	
 	inputs = {water_mask.data(), b_tri.data(), one.data()};
 	outputs = {b_tri.data()};
-	run_where_kernel("where3d", inputs, outputs, 
+	run_where_kernel("where4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},		//shapes
 		{0, 0, 0}, {0, 0, 0}, {0,}, {0, 0, 0},					//start index
 		{0, 0, 0}, {0, 0, 0}, {0,}, {0, 0, 0},					//negativ end index
@@ -1583,7 +1589,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {edge_mask.data(), b_tri_edge.data(), b_tri.data()};
 	outputs = {b_tri.data()};
-	run_where_kernel("where3d", inputs, outputs, 
+	run_where_kernel("where4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4,Y-4,Z}, {X-4, Y-4, Z},		//shapes
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//start index
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//negativ end index
@@ -1591,7 +1597,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {c_tri.data(), water_mask.data()};
 	outputs = {c_tri.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},			//shapes
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//start index
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
@@ -1599,7 +1605,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {d_tri.data(), water_mask.data()};
 	outputs = {d_tri.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {X-4, Y-4, Z}, {X-4, Y-4, Z},			//shapes
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//start index
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
@@ -1609,7 +1615,7 @@ int main(int argc, const char *argv[])
 	//prepare inputs for gtsv
 	inputs = {a_tri.data(), zero.data()}; //This is such a hack.. We need to write an assignment kernel also!
 	outputs = {a_tri.data()};
-	run_broadcast_kernel("mult2d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
 		{0, 0, 0}, {0,}, {0, 0, 0},						//start index
 		{0, 0, -Z+1}, {0,}, {0, 0, -Z+1},						//negativ end index
@@ -1617,18 +1623,33 @@ int main(int argc, const char *argv[])
 
 	inputs = {c_tri.data(), zero.data()}; //This is such a hack.. We need to write an assignment kernel also!
 	outputs = {c_tri.data()};
-	run_broadcast_kernel("mult2d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},			//shapes
 		{0, 0, Z-1}, {0,}, {0, 0, Z-1},						//start index
 		{0, 0, 0}, {0,}, {0, 0, 0},						//negativ end index
 		devices, context, bins, q);
 
+	std::cout << "bofre:\n";
+	std::cout << "a_tri checksum: ...: " << xt::sum(a_tri) << std::endl;
+	std::cout << "b_tri checksum: ..: " << xt::sum(b_tri) << std::endl;
+	std::cout << "c_tri checksum: ...: " << xt::sum(c_tri) << std::endl;
+	std::cout << "d_tri checksum: ...: " << xt::sum(d_tri) << std::endl;
+
+
 	inputs = {a_tri.data(), b_tri.data(), c_tri.data(), d_tri.data()};
 	run_gtsv((X-4)*(Y-4)*Z, inputs, devices, context, bins, q); //this outputs ans into d_tri (xilinx solver kernel choice, not mine)
 	
+	std::cout << "after:\n";
+	std::cout << "a_tri checksum: ...: " << xt::sum(a_tri) << std::endl;
+	std::cout << "b_tri checksum: ..: " << xt::sum(b_tri) << std::endl;
+	std::cout << "c_tri checksum: ...: " << xt::sum(c_tri) << std::endl;
+	std::cout << "d_tri checksum: ...: " << xt::sum(d_tri) << std::endl;
+
+
+	/*
 	inputs = {water_mask.data(), d_tri.data(), tke.data()};
 	outputs = {tke.data()};
-	run_where_kernel("where3d", inputs, outputs,
+	run_where_kernel("where4d", inputs, outputs,
 	{X-4, Y-4, Z,}, {X-4, Y-4, Z,}, {X, Y, Z, 3}, {X, Y, Z, 3},
 	{0, 0, 0}, {0, 0, 0}, {2, 2, 0, 1}, {2, 2, 0, 1},
 	{0, 0, 0}, {0, 0, 0}, {-2, -2, 0, -1}, {-2, -2, 0, -1},
@@ -1638,7 +1659,7 @@ int main(int argc, const char *argv[])
 	
 	inputs = {zero.data(), tke.data()};
 	outputs = {mask.data()};
-	run_broadcast_kernel("gt2d", inputs, outputs, 
+	run_broadcast_kernel("gt4d", inputs, outputs, 
 		{1}, {X, Y, Z, 3}, {X-4, Y-4,},					//shapes
 		{0}, {2, 2, Z-1, 1}, {0, 0,},						//start index
 		{0}, {-2, -2, 0, -1}, {0, 0, },					//negativ end index
@@ -1646,7 +1667,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {zero.data(), tke.data()};
 	outputs = {tke_surf_corr.data()};
-	run_broadcast_kernel("sub2d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{1}, {X, Y, Z, 3}, {X, Y,},					//shapes
 		{0}, {2, 2, Z-1, 1}, {2, 2,},						//start index
 		{0}, {-2, -2, 0, -1}, {-2, -2, },					//negativ end index
@@ -1655,7 +1676,7 @@ int main(int argc, const char *argv[])
 	
 	inputs = {half.data(), tke_surf_corr.data()};
 	outputs = {tke_surf_corr.data()};
-	run_broadcast_kernel("mult2d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{1}, {X, Y, }, {X, Y,},					//shapes
 		{0}, {2, 2,}, {2, 2,},						//start index
 		{0}, {-2, -2}, {-2, -2, },					//negativ end index
@@ -1663,7 +1684,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {dzw.data(), tke_surf_corr.data()};
 	outputs = {tke_surf_corr.data()};
-	run_broadcast_kernel("mult2d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{Z}, {X, Y, }, {X, Y,},					//shapes
 		{Z-1}, {2, 2,}, {2, 2,},						//start index
 		{0}, {-2, -2}, {-2, -2, },					//negativ end index
@@ -1671,7 +1692,7 @@ int main(int argc, const char *argv[])
 	
 	inputs = {mask.data(), tke_surf_corr.data(), zero.data()};
 	outputs = {tke_surf_corr.data()};
-	run_where_kernel("where2d", inputs, outputs,
+	run_where_kernel("where4d", inputs, outputs,
 	{X-4, Y-4,}, {X, Y}, {1}, {X, Y,},
 	{0, 0,}, {2, 2,}, {0,}, {2, 2,},
 	{0, 0,}, {-2,-2,}, {0,}, {-2, -2,},
@@ -1680,7 +1701,7 @@ int main(int argc, const char *argv[])
 	// flux east
 	inputs = {tke.data(), tke.data()};
 	outputs = {flux_east.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{X, Y, Z, 3}, {X, Y, Z, 3}, {X, Y, Z},					//shapes
 		{1, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0,},						//start index
 		{0, 0, 0, -2}, {-1, 0, 0, -2}, {-1, 0, 0, },					//negativ end index
@@ -1688,7 +1709,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {K_h_tke.data(), flux_east.data()};
 	outputs = {flux_east.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{1}, {X, Y, Z,}, {X, Y, Z},					//shapes
 		{0,}, {0, 0, 0,}, {0, 0, 0,},						//start index
 		{0,}, {-1, 0, 0, }, {-1, 0, 0, },					//negativ end index
@@ -1696,7 +1717,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {flux_east.data(), cost.data()};
 	outputs = {flux_east.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z}, {1, X, 1}, {X, Y, Z},					//shapes
 		{0, 0, 0,}, {0, 0, 0}, {0, 0, 0,},						//start index
 		{-1, 0, 0}, { 0, 0, 0}, {-1, 0, 0, },					//negativ end index
@@ -1704,7 +1725,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {flux_east.data(), dxu.data()};
 	outputs = {flux_east.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z}, {X, 1, 1}, {X, Y, Z},					//shapes
 		{0, 0, 0,}, {0, 0, 0}, {0, 0, 0,},						//start index
 		{-1, 0, 0}, {-1, 0, 0}, {-1, 0, 0, },					//negativ end index
@@ -1712,7 +1733,7 @@ int main(int argc, const char *argv[])
 	
 	inputs = {flux_east.data(), maskU.data()};
 	outputs = {flux_east.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z}, {X, Y, Z},					//shapes
 		{0, 0, 0,}, {0, 0, 0}, {0, 0, 0,},						//start index
 		{-1, 0, 0}, {-1, 0, 0}, {-1, 0, 0, },					//negativ end index
@@ -1720,7 +1741,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {flux_east.data(), zero.data()};
 	outputs = {flux_east.data()};
-	run_broadcast_kernel("mult2d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X, Y, Z}, {1}, {X, Y, Z},					//shapes
 		{X-1, 0, 0,}, {0,}, {X-1, 0, 0,},						//start index
 		{0, 0, 0}, {0,}, {0, 0, 0, },					//negativ end index
@@ -1729,7 +1750,7 @@ int main(int argc, const char *argv[])
 	//flux norht
 	inputs = {tke.data(), tke.data()};
 	outputs = {flux_north.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{X, Y, Z, 3}, {X, Y, Z, 3}, {X, Y, Z},					//shapes
 		{0, 1, 0, 0}, {0, 0, 0, 0}, {0, 0, 0,},						//start index
 		{0, 0, 0, -2}, {0, -1, 0, -2}, {0, -1, 0, },					//negativ end index
@@ -1737,7 +1758,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {K_h_tke.data(), flux_north.data()};
 	outputs = {flux_north.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{1}, {X, Y, Z,}, {X, Y, Z},					//shapes
 		{0,}, {0, 0, 0,}, {0, 0, 0,},						//start index
 		{0,}, {0, -1, 0, }, {0, -1, 0, },					//negativ end index
@@ -1745,7 +1766,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {flux_north.data(), dyu.data()};
 	outputs = {flux_north.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z}, {1, Y, 1}, {X, Y, Z},					//shapes
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0,},						//start index
 		{0, -1, 0}, {0, -1, 0, }, {0, -1, 0, },					//negativ end index
@@ -1753,7 +1774,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {flux_north.data(), cosu.data()};
 	outputs = {flux_north.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X, Y, Z}, {1, Y, 1}, {X, Y, Z},					//shapes
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0,},						//start index
 		{0, -1, 0}, {0, -1, 0, }, {0, -1, 0, },					//negativ end index
@@ -1761,7 +1782,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {flux_north.data(), maskV.data()};
 	outputs = {flux_north.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z}, {X, Y, Z},					//shapes
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0,},						//start index
 		{0, -1, 0}, {0, -1, 0, }, {0, -1, 0, },					//negativ end index
@@ -1769,7 +1790,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {flux_north.data(), zero.data()};
 	outputs = {flux_north.data()};
-	run_broadcast_kernel("mult2d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X, Y, Z}, {1}, {X, Y, Z},					//shapes
 		{0, Y-1, 0,}, {0,}, {0, Y-1, 0,},						//start index
 		{0, 0, 0}, {0,}, {0, 0, 0, },					//negativ end index
@@ -1780,7 +1801,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {flux_east.data(), flux_east.data()};
 	outputs = {tke_temp.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z}, {X, Y, Z},					//shapes
 		{2, 2, 0,}, {1, 2, 0,}, {2, 2, 0},						//start index
 		{-2, -2, 0}, {-3, -2, 0,}, {-2, -2, 0},					//negativ end index
@@ -1788,7 +1809,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {tke_temp.data(), dxt.data()};
 	outputs = {tke_temp.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z}, {X, 1, 1}, {X, Y, Z},					//shapes
 		{2, 2, 0}, {2, 0, 0,}, {2, 2, 0},						//start index
 		{-2, -2, 0}, {-2, 0, 0,}, {-2, -2, 0},					//negativ end index
@@ -1797,7 +1818,7 @@ int main(int argc, const char *argv[])
 	
 	inputs = {tke_temp.data(), maskW.data()};
 	outputs = {tke_temp.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z}, {X, Y, Z},					//shapes
 		{2, 2, 0}, {2, 2, 0,}, {2, 2, 0},						//start index
 		{-2, -2, 0}, {-2, -2, 0,}, {-2, -2, 0},					//negativ end index
@@ -1805,7 +1826,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {tke_temp.data(), cost.data()};
 	outputs = {tke_temp.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z}, {1, X, 1}, {X, Y, Z},					//shapes
 		{2, 2, 0}, {0, 2, 0,}, {2, 2, 0},						//start index
 		{-2, -2, 0}, {0, -2, 0,}, {-2, -2, 0},					//negativ end index
@@ -1813,7 +1834,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {tke_temp.data(), tke.data()}; //accumulate into tke, reuse tke_temp
 	outputs = {tke.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
 		{2, 2, 0}, {2, 2, 0, 1}, {2, 2, 0, 1},						//start index
 		{-2, -2, 0}, {-2, -2, 0, -1}, {-2, -2, 0, -1},					//negativ end index
@@ -1821,7 +1842,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {flux_north.data(), flux_north.data()};
 	outputs = {tke_temp.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z}, {X, Y, Z},					//shapes
 		{2, 2, 0}, {2, 1, 0,}, {2, 2, 0},						//start index
 		{-2, -2, 0}, {-2, -3, 0,}, {-2, -2, 0},					//negativ end index
@@ -1829,7 +1850,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {tke_temp.data(), cost.data()};
 	outputs = {tke_temp.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z}, {1, Y, 1}, {X, Y, Z},					//shapes
 		{2, 2, 0}, {0, 2, 0,}, {2, 2, 0},						//start index
 		{-2, -2, 0}, {0, -2, 0,}, {-2, -2, 0},					//negativ end index
@@ -1837,7 +1858,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {tke_temp.data(), dyt.data()};
 	outputs = {tke_temp.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z}, {1, Y, 1}, {X, Y, Z},					//shapes
 		{2, 2, 0}, {0, 2, 0,}, {2, 2, 0},						//start index
 		{-2, -2, 0}, {0, -2, 0,}, {-2, -2, 0},					//negativ end index
@@ -1845,7 +1866,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {tke_temp.data(), maskW.data()};
 	outputs = {tke_temp.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z}, {X, Y, Z},					//shapes
 		{2, 2, 0}, {2, 2, 0,}, {2, 2, 0},						//start index
 		{-2, -2, 0}, {-2, -2, 0,}, {-2, -2, 0},					//negativ end index
@@ -1853,7 +1874,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {tke_temp.data(), tke.data()}; 
 	outputs = {tke.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
 		{2, 2, 0}, {2, 2, 0, 1}, {2, 2, 0, 1},						//start index
 		{-2, -2, 0}, {-2, 2, 0, -1}, {-2, -2, 0, -1},					//negativ end index
@@ -1864,7 +1885,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {maskW.data(), maskW.data()}; 
 	outputs = {maskUtr.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z,}, {X, Y, Z,},					//shapes
 		{0, 0, 0}, {1, 0, 0,}, {0, 0, 0,},						//start index
 		{-1, 0, 0}, {0, 0, 0}, {-1, 0, 0},					//negativ end index
@@ -1872,7 +1893,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {zero.data(), zero.data()}; //reeeeally need assignment kernel...
 	outputs = {flux_east.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{1}, {1}, {X, Y, Z,},					//shapes
 		{0,}, {0,}, {0, 0, 0,},						//start index
 		{0,}, {0,}, {0, 0, 0},					//negativ end index
@@ -1886,7 +1907,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {maskW.data(), maskW.data()}; 
 	outputs = {maskVtr.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z,}, {X, Y, Z,},					//shapes
 		{0, 1, 0}, {0, 0, 0,}, {0, 0, 0,},						//start index
 		{0, 0, 0}, {0, -1, 0}, {0, -1, 0},					//negativ end index
@@ -1894,7 +1915,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {zero.data(), zero.data()}; //reeeeally need assignment kernel...
 	outputs = {flux_north.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{1}, {1}, {X, Y, Z,},					//shapes
 		{0,}, {0,}, {0, 0, 0,},						//start index
 		{0,}, {0,}, {0, 0, 0},					//negativ end index
@@ -1908,7 +1929,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {maskW.data(), maskW.data()}; 
 	outputs = {maskWtr.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z,}, {X, Y, Z,},					//shapes
 		{0, 0, 1}, {0, 0, 0,}, {0, 0, 0,},						//start index
 		{0, 0, 0}, {0, 0, -1}, {0, 0, -1},					//negativ end index
@@ -1916,7 +1937,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {zero.data(), zero.data()}; //reeeeally need assignment kernel...
 	outputs = {flux_top.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{1}, {1}, {X, Y, Z,},					//shapes
 		{0,}, {0,}, {0, 0, 0,},						//start index
 		{0,}, {0,}, {0, 0, 0},					//negativ end index
@@ -1932,7 +1953,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {flux_east.data(), flux_east.data()}; 
 	outputs = {dtke.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z}, {X, Y, Z, 3},					//shapes
 		{1, 2, 0,}, {2, 2, 0,}, {2, 2, 0, 0},						//start index
 		{-3, -2, 0,}, {-2, -2, 0}, {-2, -2, 0, -2},					//negativ end index
@@ -1940,7 +1961,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {dtke.data(), cost.data()}; 
 	outputs = {dtke.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z, 3}, {1, X, 1}, {X, Y, Z, 3},					//shapes
 		{2, 2, 0, 0}, {0, 2, 0}, {2, 2, 0, 0} ,						//start index
 		{-2, -2, 0, -2}, {0, -2, 0}, {-2, -2, 0, -2},					//negativ end index
@@ -1948,7 +1969,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {dtke.data(), dxt.data()}; 
 	outputs = {dtke.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z, 3}, {X, 1, 1}, {X, Y, Z, 3},					//shapes
 		{2, 2, 0, 0}, {2, 0, 0}, {2, 2, 0, 0} ,						//start index
 		{-2, -2, 0, -2}, {-2, 0, 0}, {-2, -2, 0, -2},					//negativ end index
@@ -1956,7 +1977,7 @@ int main(int argc, const char *argv[])
 		
 	inputs = {flux_north.data(), flux_north.data()}; 
 	outputs = {dtke_temp.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{X, Y, Z}, {X, Y, Z}, {X, Y, Z, 3},					//shapes
 		{2, 2 ,0,}, {2, 1, 0,}, {2, 2, 0, 0},						//start index
 		{-2, -2, 0}, {-2, -3, 0}, {-2, -2, 0, -2},					//negativ end index
@@ -1964,7 +1985,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {dtke_temp.data(), cost.data()}; 
 	outputs = {dtke_temp.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z, 3}, {1, X, 1}, {X, Y, Z, 3},					//shapes
 		{2, 2, 0, 0}, {0, 2, 0}, {2, 2, 0, 0} ,						//start index
 		{-2, -2, 0, -2}, {0, -2, 0}, {-2, -2, 0, -2},					//negativ end index
@@ -1972,7 +1993,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {dtke_temp.data(), dyt.data()}; 
 	outputs = {dtke_temp.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z, 3}, {1, Y, 1}, {X, Y, Z, 3},					//shapes
 		{2, 2, 0, 0}, {0, 2, 0}, {2, 2, 0, 0} ,						//start index
 		{-2, -2, 0, -2}, {0, -2, 0}, {-2, -2, 0, -2},					//negativ end index
@@ -1980,7 +2001,7 @@ int main(int argc, const char *argv[])
 		
 	inputs = {dtke.data(), dtke_temp.data()}; 
 	outputs = {dtke.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{X, Y, Z, 3}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
 		{2, 2, 0, 0}, {2, 2, 0, 0}, {2, 2, 0, 0} ,						//start index
 		{-2, -2, 0, -2}, {-2, -2, 0, -2}, {-2, -2, 0, -2},					//negativ end index
@@ -1988,7 +2009,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {dtke.data(), maskW.data()}; 
 	outputs = {dtke.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X, Y, Z, 3}, {X, Y, Z,}, {X, Y, Z, 3},					//shapes
 		{2, 2, 0, 0}, {2, 2, 0,}, {2, 2, 0, 0} ,						//start index
 		{-2, -2, 0, -2}, {-2, -2, 0,}, {-2, -2, 0, -2},					//negativ end index
@@ -1996,7 +2017,7 @@ int main(int argc, const char *argv[])
 	
 	inputs = {flux_top.data(), dzw.data()}; 
 	outputs = {dtke_temp.data()};
-	run_broadcast_kernel("div2d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z,}, {Z,}, {X, Y, Z, 3},					//shapes
 		{0, 0, 0,}, {0,}, {0, 0, 0, 0} ,						//start index
 		{0, 0, -Z+1,}, {-Z+1,}, {0, 0, -Z+1, -2},					//negativ end index
@@ -2004,7 +2025,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {dtke.data(), dtke_temp.data()}; 
 	outputs = {dtke.data()};
-	run_broadcast_kernel("sub2d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{X, Y, Z, 3}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
 		{0, 0, 0, 0}, {0, 0, 0 ,0}, {0, 0, 0, 0} ,						//start index
 		{0, 0, -Z+1, -2}, {0, 0, -Z+1, -2}, {0, 0, -Z+1, -2},					//negativ end index
@@ -2012,7 +2033,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {flux_top.data(), flux_top.data()}; 
 	outputs = {dtke_temp.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{X, Y, Z,}, {X, Y, Z,}, {X, Y, Z, 3},					//shapes
 		{0, 0, 0,}, {0, 0, 1}, {0, 0, 1, 0} ,						//start index
 		{0, 0, -2,}, {0, 0, -1,}, {0, 0, -1, -2},					//negativ end index
@@ -2020,7 +2041,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {dtke_temp.data(), dzw.data()}; 
 	outputs = {dtke_temp.data()};
-	run_broadcast_kernel("div3d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z, 3}, {Z,}, {X, Y, Z, 3},					//shapes
 		{0, 0, 1, 0,}, {1}, {0, 0, 1, 0} ,						//start index
 		{0, 0, -1, -2,}, {-1,}, {0, 0, -1, -2},					//negativ end index
@@ -2028,7 +2049,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {dtke.data(), dtke_temp.data()}; 
 	outputs = {dtke.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X, Y, Z, 3}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
 		{0, 0, 1, 0}, {0, 0, 1 ,0}, {0, 0, 1, 0} ,						//start index
 		{0, 0, -1, -2}, {0, 0, -1, -2}, {0, 0, -1, -2},					//negativ end index
@@ -2036,7 +2057,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {flux_top.data(), flux_top.data()}; 
 	outputs = {dtke_temp.data()};
-	run_broadcast_kernel("sub2d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{X, Y, Z,}, {X, Y, Z,}, {X, Y, Z, 3},					//shapes
 		{0, 0, Z-2,}, {0, 0, Z-1}, {0, 0, Z-1, 0} ,						//start index
 		{0, 0, -1,}, {0, 0, 0,}, {0, 0, 0, -2},					//negativ end index
@@ -2044,7 +2065,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {dtke_temp.data(), dzw.data()}; 
 	outputs = {dtke_temp.data()};
-	run_broadcast_kernel("div2d", inputs, outputs, 
+	run_broadcast_kernel("div4d", inputs, outputs, 
 		{X, Y, Z, 3}, {Z,}, {X, Y, Z, 3},					//shapes
 		{0, 0, Z-1, 0,}, {Z-1}, {0, 0, Z-1, 0} ,						//start index
 		{0, 0, 0, -2,}, {0, }, {0, 0, 0, -2},					//negativ end index
@@ -2052,7 +2073,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {dtke_temp.data(), two.data()}; 
 	outputs = {dtke_temp.data()};
-	run_broadcast_kernel("mult2d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{X, Y, Z, 3}, {1,}, {X, Y, Z, 3},					//shapes
 		{0, 0, Z-1, 0,}, {0}, {0, 0, Z-1, 0} ,						//start index
 		{0, 0, 0, -2,}, {0, }, {0, 0, 0, -2},					//negativ end index
@@ -2060,7 +2081,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {dtke.data(), dtke_temp.data()}; 
 	outputs = {dtke.data()};
-	run_broadcast_kernel("add2d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X, Y, Z, 3}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
 		{0, 0, Z-1, 0}, {0, 0, Z-1 ,0}, {0, 0, Z-1, 0} ,						//start index
 		{0, 0, 0, -2}, {0, 0, 0, -2}, {0, 0, 0, -2},					//negativ end index
@@ -2073,7 +2094,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {three_halves_plus_AB_eps.data(), dtke.data()}; 
 	outputs = {tke_temp.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{1,}, {X, Y, Z, 3}, {X, Y, Z,},					//shapes
 		{0,}, {0, 0, 0, 0}, {0, 0, 0,} ,						//start index
 		{0,}, {0, 0, 0, -2}, {0, 0, 0,},					//negativ end index
@@ -2081,7 +2102,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {tke_temp.data(), tke.data()}; 
 	outputs = {tke.data()};
-	run_broadcast_kernel("add3d", inputs, outputs, 
+	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X, Y, Z,}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
 		{0, 0, 0,}, {0, 0, 0, 1}, {0, 0, 0, 1} ,						//start index
 		{0, 0, 0,}, {0, 0, 0, -1}, {0, 0, 0, -1},					//negativ end index
@@ -2089,7 +2110,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {one_halves_plus_AB_eps.data(), dtke.data()}; 
 	outputs = {tke_temp.data()};
-	run_broadcast_kernel("mult3d", inputs, outputs, 
+	run_broadcast_kernel("mult4d", inputs, outputs, 
 		{1,}, {X, Y, Z, 3}, {X, Y, Z,},					//shapes
 		{0,}, {0, 0, 0, 2}, {0, 0, 0,} ,						//start index
 		{0,}, {0, 0, 0, 0}, {0, 0, 0},					//negativ end index
@@ -2097,7 +2118,7 @@ int main(int argc, const char *argv[])
 	
 	inputs = {tke_temp.data(), tke.data()}; 
 	outputs = {tke.data()};
-	run_broadcast_kernel("sub3d", inputs, outputs, 
+	run_broadcast_kernel("sub4d", inputs, outputs, 
 		{X, Y, Z,}, {X, Y, Z, 3}, {X, Y, Z, 3},					//shapes
 		{0, 0, 0}, {0, 0, 0, 1}, {0, 0, 0, 1} ,						//start index
 		{0, 0, 0}, {0, 0, 0, -1}, {0, 0, 0, -1},					//negativ end index
@@ -2135,5 +2156,6 @@ int main(int argc, const char *argv[])
 	std::cout << "maskWtr (2558)..: " << xt::sum(maskWtr) << std::endl;
 
 	std::cout << "dtke (-600012) " << xt::sum(dtke) << std::endl;
+	*/
 	return 0;
 }

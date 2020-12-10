@@ -51,13 +51,6 @@ extern "C" void add4d(double* A, double* B, double* out, int A_lin_offset, int B
 					A_val = A[A_ind];
 					B_val = B[B_ind];
 					out[O_ind] = A_val + B_val;
-
-					/*
-					std::cout << "(" << i << ", " << j << ", " << k << ", " << l << ")" << std::endl;
-					std::cout << "\t\tO_ind: " << O_ind <<"\t\tO_val: " << out[O_ind] << std::endl;
-					std::cout << "\t\tA_ind: " << A_ind <<"\t\tA_val: " << A_val << std::endl;
-					std::cout << "\t\tB_ind: " << B_ind <<"\t\tB_val: " << B_val << std::endl; 
-					*/
 				}
 			}
 		}

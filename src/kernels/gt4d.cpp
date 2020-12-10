@@ -1,4 +1,4 @@
-extern "C" void abs3d(double* A, double* B, double* out, int A_lin_offset, int B_lin_offset, int out_lin_offset, int* strides_offsets_out, int dim) {
+extern "C" void gt4d(double* A, double* B, double* out, int A_lin_offset, int B_lin_offset, int out_lin_offset, int* strides_offsets_out, int dim) {
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem0 port = A latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem1 port = B latency = 64 num_read_outstanding = \
@@ -26,8 +26,7 @@ extern "C" void abs3d(double* A, double* B, double* out, int A_lin_offset, int B
 
 	int out_end_offset[dim];
 	int out_shape[dim];
-
-
+	
 	for (int i = 0; i<dim; i++){
 		A_stride[i] = strides_offsets_out[i];
 		B_stride[i] = strides_offsets_out[dim + i];
@@ -44,13 +43,19 @@ extern "C" void abs3d(double* A, double* B, double* out, int A_lin_offset, int B
 	for (int i=(0 + out_offset[0]); i<(out_shape[0] + out_end_offset[0]); i++){
 		for (int j=(0 + out_offset[1]); j<(out_shape[1] + out_end_offset[1]); j++){
 			for (int k=(0 + out_offset[2]); k<(out_shape[2] + out_end_offset[2]); k++){
-				A_ind = (i + A_offset[0])*A_stride[0] + (j + A_offset[1])*A_stride[1] + (k + A_offset[2])*A_stride[2] + A_lin_offset;
-				O_ind = i*out_stride[0] + j*out_stride[1] + k*out_stride[2] + out_lin_offset;
-				A_val = A[A_ind];
-				if (A_val < 0){
-					out[O_ind] = -A_val;
-				} else {
-					out[O_ind] = A_val;
+				for (int l=(0 + out_offset[3]); l<(out_shape[3] + out_end_offset[3]); l++){
+					A_ind = (i + A_offset[0])*A_stride[0] + (j + A_offset[1])*A_stride[1] + (k + A_offset[2])*A_stride[2] + (l + A_offset[3])*A_stride[3] + A_lin_offset;
+					B_ind = (i + B_offset[0])*B_stride[0] + (j + B_offset[1])*B_stride[1] + (k + B_offset[2])*B_stride[2] + (l + B_offset[3])*B_stride[3] + B_lin_offset;
+					O_ind = i*out_stride[0] + j*out_stride[1] + k*out_stride[2] + l*out_stride[3] + out_lin_offset;
+					
+					A_val = A[A_ind];
+					B_val = B[B_ind];
+	
+					if (A_val > B_val){
+					out[O_ind] = 1;
+					} else {
+						out[O_ind] = 0;
+					}
 				}
 			}
 		}
