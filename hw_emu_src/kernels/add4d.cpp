@@ -1,4 +1,3 @@
-#include "iostream"
 extern "C" void add4d(double* A, double* B, double* out, int A_lin_offset, int B_lin_offset, int out_lin_offset, int* strides_offsets_out, int dim) {
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem0 port = A latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
@@ -27,7 +26,7 @@ extern "C" void add4d(double* A, double* B, double* out, int A_lin_offset, int B
 
 	int out_end_offset[dim];
 	int out_shape[dim];
-
+	
 	for (int i = 0; i<dim; i++){
 		A_stride[i] = strides_offsets_out[i];
 		B_stride[i] = strides_offsets_out[dim + i];
@@ -35,10 +34,10 @@ extern "C" void add4d(double* A, double* B, double* out, int A_lin_offset, int B
 
 		A_offset[i] = strides_offsets_out[3*dim + i];
 		B_offset[i] = strides_offsets_out[4*dim + i];
-		out_offset[i] = strides_offsets_out[5*dim + 1];
+		out_offset[i] = strides_offsets_out[5*dim + i];
 
 		out_shape[i] = strides_offsets_out[6*dim +i];
-		out_end_offset[i] = strides_offsets_out[7*dim + 1];
+		out_end_offset[i] = strides_offsets_out[7*dim + i];
 	}
 
 	for (int i=(0 + out_offset[0]); i<(out_shape[0] + out_end_offset[0]); i++){
@@ -53,11 +52,12 @@ extern "C" void add4d(double* A, double* B, double* out, int A_lin_offset, int B
 					B_val = B[B_ind];
 					out[O_ind] = A_val + B_val;
 
+					/*
 					std::cout << "(" << i << ", " << j << ", " << k << ", " << l << ")" << std::endl;
 					std::cout << "\t\tO_ind: " << O_ind <<"\t\tO_val: " << out[O_ind] << std::endl;
 					std::cout << "\t\tA_ind: " << A_ind <<"\t\tA_val: " << A_val << std::endl;
 					std::cout << "\t\tB_ind: " << B_ind <<"\t\tB_val: " << B_val << std::endl; 
-
+					*/
 				}
 			}
 		}

@@ -425,45 +425,12 @@ int main(int argc, const char *argv[])
 	cl::Program::Binaries bins = xcl::import_binary_file(xclbin_path);
 	devices.resize(1);
 
-	int size_4d = X * Y * Z * 3;
-	int size_3d = X * Y * Z;
-	int size_2d = X * Y;
-	int size_1d_vert = Z;
-	int size_1d_hoz = X; //assert(X == Y)!!!
+	auto platform_id = device.getInfo<CL_DEVICE_PLATFORM>();
+	xcl::Stream::init(platform_id);
 
 	xt::xarray<double> u = xt::load_npy<double>("../src/numpy_files/u.npy");
 	xt::xarray<double> v = xt::load_npy<double>("../src/numpy_files/v.npy");
 	xt::xarray<double> w = xt::load_npy<double>("../src/numpy_files/w.npy");
-	xt::xarray<double> maskU = xt::load_npy<double>("../src/numpy_files/maskU.npy");
-	xt::xarray<double> maskV = xt::load_npy<double>("../src/numpy_files/maskV.npy");
-	xt::xarray<double> maskW = xt::load_npy<double>("../src/numpy_files/maskW.npy");
-	xt::xarray<double> dxt = xt::load_npy<double>("../src/numpy_files/dxt.npy");
-	xt::xarray<double> dxu = xt::load_npy<double>("../src/numpy_files/dxu.npy");
-	xt::xarray<double> dyt = xt::load_npy<double>("../src/numpy_files/dyt.npy");
-	xt::xarray<double> dyu = xt::load_npy<double>("../src/numpy_files/dyu.npy");
-	xt::xarray<double> dzt = xt::load_npy<double>("../src/numpy_files/dzt.npy");
-	xt::xarray<double> dzw = xt::load_npy<double>("../src/numpy_files/dzw.npy");
-	xt::xarray<double> cost = xt::load_npy<double>("../src/numpy_files/cost.npy");
-	xt::xarray<double> cosu = xt::load_npy<double>("../src/numpy_files/cosu.npy");
-	xt::xarray<double> kbot = xt::load_npy<double>("../src/numpy_files/kbot.npy");
-	xt::xarray<double> forc_tke_surface = xt::load_npy<double>("../src/numpy_files/forc_tke_surface.npy");
-	xt::xarray<double> kappaM = xt::load_npy<double>("../src/numpy_files/kappaM.npy");
-	xt::xarray<double> mxl = xt::load_npy<double>("../src/numpy_files/mxl.npy");
-	xt::xarray<double> forc = xt::load_npy<double>("../src/numpy_files/forc.npy");
-	xt::xarray<double> tke = xt::load_npy<double>("../src/numpy_files/tke.npy");
-	xt::xarray<double> dtke = xt::load_npy<double>("../src/numpy_files/dtke.npy");
-	xt::xarray<double> flux_east = xt::zeros<double>({X, Y, Z});
-	xt::xarray<double> flux_north = xt::zeros<double>({X, Y, Z});
-	xt::xarray<double> flux_top = xt::zeros<double>({X, Y, Z});
-	xt::xarray<double> sqrttke = xt::empty<double>({X, Y, Z});
-	xt::xarray<double> a_tri = xt::zeros<double>({X-4, Y-4, Z});
-	xt::xarray<double> b_tri = xt::zeros<double>({X-4, Y-4, Z});
-	xt::xarray<double> b_tri_edge = xt::zeros<double>({X-4, Y-4, Z});
-	xt::xarray<double> c_tri = xt::zeros<double>({X-4, Y-4, Z});
-	xt::xarray<double> d_tri = xt::zeros<double>({X-4, Y-4, Z});
-	xt::xarray<double> delta = xt::zeros<double>({X-4, Y-4, Z});
-	xt::xarray<double> ks = xt::zeros<double>({X-4, Y-4});
-	xt::xarray<double> tke_surf_corr = xt::zeros<double>({X,Y});
 
 	std::vector<double *> inputs, outputs;
 

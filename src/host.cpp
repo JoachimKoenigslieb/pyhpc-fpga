@@ -1483,7 +1483,7 @@ int main(int argc, const char *argv[])
 	inputs = {forc_tke_surface.data(), dzw.data() };
 	outputs = {d_tri_tmp.data()};
 	run_broadcast_kernel("div4d", inputs, outputs, 
-		{X, Y,}, {Z}, {X-4, Y-4,Z} ,					//shapes
+		{X, Y,}, {Z}, {X-4, Y-4, Z} ,					//shapes
 		{2, 2,}, {Z-1}, {0, 0, Z-1},					//start index
 		{-2, -2,}, {0}, {0, 0, 0},						//negativ end index
 		devices, context, bins, q);
@@ -1630,11 +1630,20 @@ int main(int argc, const char *argv[])
 		devices, context, bins, q);
 
 	std::cout << "bofre:\n";
+
+	int N=3136;
+
+	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "a_tri", a_tri.data(), {N}, "w");
+	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "b_tri", b_tri.data(), {N}, "a");
+	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "c_tri", c_tri.data(), {N}, "a");
+	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "d_tri", d_tri.data(), {N}, "a");
+	std::cout << "Wrote diagonals...";
+
+
 	std::cout << "a_tri checksum: ...: " << xt::sum(a_tri) << std::endl;
 	std::cout << "b_tri checksum: ..: " << xt::sum(b_tri) << std::endl;
 	std::cout << "c_tri checksum: ...: " << xt::sum(c_tri) << std::endl;
 	std::cout << "d_tri checksum: ...: " << xt::sum(d_tri) << std::endl;
-
 
 	inputs = {a_tri.data(), b_tri.data(), c_tri.data(), d_tri.data()};
 	run_gtsv((X-4)*(Y-4)*Z, inputs, devices, context, bins, q); //this outputs ans into d_tri (xilinx solver kernel choice, not mine)
@@ -1644,6 +1653,11 @@ int main(int argc, const char *argv[])
 	std::cout << "b_tri checksum: ..: " << xt::sum(b_tri) << std::endl;
 	std::cout << "c_tri checksum: ...: " << xt::sum(c_tri) << std::endl;
 	std::cout << "d_tri checksum: ...: " << xt::sum(d_tri) << std::endl;
+	
+
+	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "sol", d_tri.data(), {N}, "a");
+	std::cout << "Wrote diagonals...";
+
 
 
 	/*
