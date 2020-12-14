@@ -1,4 +1,4 @@
-extern "C" void add4d(double* A, double* B, double* out, int A_lin_offset, int B_lin_offset, int out_lin_offset, int* strides_offsets_out, int dim) {
+extern "C" void min4d(double* A, double* B, double* out, int A_lin_offset, int B_lin_offset, int out_lin_offset, int* strides_offsets_out, int dim) {
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem0 port = A latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem1 port = B latency = 64 num_read_outstanding = \
@@ -50,14 +50,13 @@ extern "C" void add4d(double* A, double* B, double* out, int A_lin_offset, int B
 					
 					A_val = A[A_ind];
 					B_val = B[B_ind];
-					out[O_ind] = A_val + B_val;
 
-					/*
-					std::cout << "(" << i << ", " << j << ", " << k << ", " << l << ")" << std::endl;
-					std::cout << "\t\tO_ind: " << O_ind <<"\t\tO_val: " << out[O_ind] << std::endl;
-					std::cout << "\t\tA_ind: " << A_ind <<"\t\tA_val: " << A_val << std::endl;
-					std::cout << "\t\tB_ind: " << B_ind <<"\t\tB_val: " << B_val << std::endl; 
-					*/
+					if (A_val > B_val){
+						out[O_ind] = B_val;
+					} else {
+						out[O_ind] = A_val;
+					}
+
 				}
 			}
 		}

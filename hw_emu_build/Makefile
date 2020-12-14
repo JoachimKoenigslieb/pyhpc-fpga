@@ -4,7 +4,7 @@ OBJ_DIR := ./objects
 TARGET := hw_emu
 
 KERNEL_INCLUDES := -I/tools/Xilinx/Vivado/2020.1/include/ -I${SRC_DIR}/xf_solver/L2/include/ -I${SRC_DIR}/xcl2/
-HOST_INCLUDES := -I/opt/xilinx/xrt/include/ -I/tools/Xilinx/Vivado/2020.1/include/ -I../src/xcl2/ -I${SRC_DIR}/xcl2/
+HOST_INCLUDES := -I/opt/xilinx/xrt/include/ -I/tools/Xilinx/Vivado/2020.1/include/ -I${SRC_DIR}/xcl2/
 
 HOST_LIBS  := -L/opt/xilinx/xrt/lib/ -L/usr/local/lib -L/usr/lib -lOpenCL -lcnpy -lz -lpthread -lrt -lstdc++ -std=c++14 -w -O0 -g
 
