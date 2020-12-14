@@ -1,4 +1,5 @@
-#include "hls_math.h"
+#include <cmath>
+// https://github.com/Xilinx/HLS-Tiny-Tutorials/tree/master/algorithm_fixed_point_sqrt <cmath> should be implemented but slow!
 extern "C" void sqrt4d(double* A, double* B, double* out, int A_lin_offset, int B_lin_offset, int out_lin_offset, int* strides_offsets_out, int dim) {
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem0 port = A latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
@@ -48,7 +49,7 @@ extern "C" void sqrt4d(double* A, double* B, double* out, int A_lin_offset, int 
 					A_ind = (i + A_offset[0])*A_stride[0] + (j + A_offset[1])*A_stride[1] + (k + A_offset[2])*A_stride[2] + (l + A_offset[3])*A_stride[3] + A_lin_offset;
 					O_ind = i*out_stride[0] + j*out_stride[1] + k*out_stride[2] + l*out_stride[3] + out_lin_offset;
 					A_val = A[A_ind];
-					out[O_ind] = hls::sqrt(A_val);
+					out[O_ind] = std::sqrt(A_val);
 				}
 			}
 		}

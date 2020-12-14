@@ -69,6 +69,18 @@ void pad_begin(std::vector<int> &vec, int val, int to_len){
 	}
 }
 
+void pad_end(std::vector<int> &vec, int val, int to_len){
+	int vec_len = vec.size();
+	for (int i=0; i<(to_len - vec_len); i++){
+		vec.push_back(val);
+	}
+	if (vec.size() > to_len){
+		for (int i=0; i<(vec.size() - to_len) +1; i++){
+			vec.pop_back();
+		}
+	}
+}
+
 std::vector<int> sub_vecs(std::vector<int> A, std::vector<int> B){
 	int dims = A.size();
 	std::vector<int> res(dims);
@@ -250,15 +262,15 @@ void negotiate_strides(	std::vector<int> A_shape, std::vector<int> &out_shape,
 	A_lin_offset_res = A_lin_offset;
 	out_lin_offset_res = out_lin_offset;
 
-	pad_begin(A_stride_res, 0, 4);
-	pad_begin(A_shape, 1, 4);
-	pad_begin(A_offset, 0, 4);
-	pad_begin(A_end_offset, 0, 4);
+	pad_end(A_stride_res, 0, 4);
+	pad_end(A_shape, 1, 4);
+	pad_end(A_offset, 0, 4);
+	pad_end(A_end_offset, 0, 4);
 
-	pad_begin(out_stride_res, 0, 4);
-	pad_begin(out_shape, 1, 4);
-	pad_begin(out_offset, 0, 4);
-	pad_begin(out_end_offset, 0, 4);
+	pad_end(out_stride_res, 0, 4);
+	pad_end(out_shape, 1, 4);
+	pad_end(out_offset, 0, 4);
+	pad_end(out_end_offset, 0, 4);
 
 	out_dim = 4;
 }
@@ -1629,38 +1641,9 @@ int main(int argc, const char *argv[])
 		{0, 0, 0}, {0,}, {0, 0, 0},						//negativ end index
 		devices, context, bins, q);
 
-	std::cout << "bofre:\n";
-
-	int N=3136;
-
-	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "a_tri", a_tri.data(), {N}, "w");
-	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "b_tri", b_tri.data(), {N}, "a");
-	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "c_tri", c_tri.data(), {N}, "a");
-	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "d_tri", d_tri.data(), {N}, "a");
-	std::cout << "Wrote diagonals...";
-
-
-	std::cout << "a_tri checksum: ...: " << xt::sum(a_tri) << std::endl;
-	std::cout << "b_tri checksum: ..: " << xt::sum(b_tri) << std::endl;
-	std::cout << "c_tri checksum: ...: " << xt::sum(c_tri) << std::endl;
-	std::cout << "d_tri checksum: ...: " << xt::sum(d_tri) << std::endl;
-
 	inputs = {a_tri.data(), b_tri.data(), c_tri.data(), d_tri.data()};
 	run_gtsv((X-4)*(Y-4)*Z, inputs, devices, context, bins, q); //this outputs ans into d_tri (xilinx solver kernel choice, not mine)
-	
-	std::cout << "after:\n";
-	std::cout << "a_tri checksum: ...: " << xt::sum(a_tri) << std::endl;
-	std::cout << "b_tri checksum: ..: " << xt::sum(b_tri) << std::endl;
-	std::cout << "c_tri checksum: ...: " << xt::sum(c_tri) << std::endl;
-	std::cout << "d_tri checksum: ...: " << xt::sum(d_tri) << std::endl;
-	
 
-	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "sol", d_tri.data(), {N}, "a");
-	std::cout << "Wrote diagonals...";
-
-
-
-	/*
 	inputs = {water_mask.data(), d_tri.data(), tke.data()};
 	outputs = {tke.data()};
 	run_where_kernel("where4d", inputs, outputs,
@@ -2170,6 +2153,5 @@ int main(int argc, const char *argv[])
 	std::cout << "maskWtr (2558)..: " << xt::sum(maskWtr) << std::endl;
 
 	std::cout << "dtke (-600012) " << xt::sum(dtke) << std::endl;
-	*/
 	return 0;
 }
