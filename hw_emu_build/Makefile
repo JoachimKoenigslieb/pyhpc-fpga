@@ -1,7 +1,7 @@
 SRC_DIR := ../hw_emu_src
 KERNEL_DIR := ${SRC_DIR}/kernels
 OBJ_DIR := ./objects
-TARGET := sw_emu
+TARGET := hw_emu
 
 KERNEL_INCLUDES := -I/tools/Xilinx/Vivado/2020.1/include/ -I${SRC_DIR}/xf_solver/L2/include/ -I${SRC_DIR}/xcl2/
 HOST_INCLUDES := -I/opt/xilinx/xrt/include/ -I/tools/Xilinx/Vivado/2020.1/include/ -I../src/xcl2/ -I${SRC_DIR}/xcl2/

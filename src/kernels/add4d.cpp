@@ -16,16 +16,16 @@ extern "C" void add4d(double* A, double* B, double* out, int A_lin_offset, int B
 	int O_ind, A_ind, B_ind;
 	double A_val, B_val;
 
-	int A_offset[dim];
-	int B_offset[dim];
-	int out_offset[dim];
+	int A_offset[4];
+	int B_offset[4];
+	int out_offset[4];
 
-	int A_stride[dim];
-	int B_stride[dim];
-	int out_stride[dim];
+	int A_stride[4];
+	int B_stride[4];
+	int out_stride[4];
 
-	int out_end_offset[dim];
-	int out_shape[dim];
+	int out_end_offset[4];
+	int out_shape[4];
 	
 	for (int i = 0; i<dim; i++){
 		A_stride[i] = strides_offsets_out[i];
