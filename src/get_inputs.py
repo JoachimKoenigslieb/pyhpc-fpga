@@ -5,11 +5,13 @@ import numpy as np
 def generate_inputs(size):
     np.random.seed(17)
 
-    shape = (
-        math.ceil(2 * size ** (1/3)),
-        math.ceil(2 * size ** (1/3)),
-        math.ceil(0.25 * size ** (1/3)),
-    )
+    # shape = (
+    #     math.ceil(2 * size ** (1/3)),
+    #     math.ceil(2 * size ** (1/3)),
+    #     math.ceil(0.25 * size ** (1/3)),
+    # )
+    
+    shape = (6, 6, 4)
 
     # masks
     maskU, maskV, maskW = ((np.random.rand(*shape) < 0.8).astype('float64') for _ in range(3))
@@ -42,7 +44,7 @@ def generate_inputs(size):
         tke, dtke
     )
 
-N = 4096
+N = 128
 u, v, w , maskU, maskV, maskW, dxt, dxu, dyt, dyu, dzt, dzw, cost, cosu, kbot, kappaM, mxl, forc, forc_tke_surface, tke, dtke = generate_inputs(N)
 
 np.save('./numpy_files/u', u)

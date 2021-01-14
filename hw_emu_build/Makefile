@@ -1,7 +1,7 @@
 SRC_DIR := ../hw_emu_src
 KERNEL_DIR := ${SRC_DIR}/kernels
 OBJ_DIR := ./objects
-TARGET := hw_emu
+TARGET := hw
 
 KERNEL_INCLUDES := -I/tools/Xilinx/Vivado/2020.1/include/ -I${SRC_DIR}/xf_solver/L2/include/ -I${SRC_DIR}/xcl2/
 HOST_INCLUDES := -I/opt/xilinx/xrt/include/ -I/tools/Xilinx/Vivado/2020.1/include/ -I${SRC_DIR}/xcl2/
@@ -20,7 +20,7 @@ $(TARGET)_objects/%.xo: $(KERNEL_DIR)/%.cpp
 	v++ -t $(TARGET) --config design.cfg -c -k $(basename $(notdir $<)) $(KERNEL_INCLUDES) -o $@ $<
 
 host: $(SRC_DIR)/host.cpp
-	g++ -o host $< ${HOST_INCLUDES} ${HOST_LIBS} -g
+	g++ -o host_${TARGET} $< ${HOST_INCLUDES} ${HOST_LIBS} -g
 
 clean:
 	rm -f *.log

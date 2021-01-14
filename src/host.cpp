@@ -13,8 +13,8 @@
 
 #include "xcl2.cpp"
 
-#define X 32
-#define Y 32
+#define X 6
+#define Y 6
 #define Z 4
 
 
@@ -199,7 +199,6 @@ int collect_linear_offset(std::vector<int> view_shape, std::vector<int> stride, 
 }
 
 std::vector<int> rebuild_stride(std::vector<int> stride, std::vector<int> view_shape, int out_dim){
-	int dims = stride.size();
 	std::vector<int> new_stride;
 
 	new_stride = zero_on_squeeze(view_shape, stride);
@@ -209,7 +208,6 @@ std::vector<int> rebuild_stride(std::vector<int> stride, std::vector<int> view_s
 }
 
 std::vector<int> rebuild_offset(std::vector<int> offset, std::vector<int> view_shape, std::vector<int> out_offset, int out_dim){
-	int dims = view_shape.size();
 	std::vector<int> filtered_offset;
 
 	filtered_offset = zero_on_squeeze(view_shape, offset);
@@ -283,6 +281,83 @@ int next_largets_factor_2(int n){
 	return factor_2;
 }
 
+void run_1d_kernel(std::string kernel_name,
+							std::vector<double *> &inputs,
+							std::vector<double *> &outputs,
+							std::vector<int> A_shape,
+							std::vector<int> output_shape,
+							std::vector<int> A_offset,
+							std::vector<int> output_offset,
+							std::vector<int> A_offset_end,
+							std::vector<int> output_offset_end,
+							std::vector<cl::Device> &devices,
+							cl::Context &context,
+							cl::Program::Binaries &bins,
+							cl::CommandQueue &q)
+{
+	//setup program and kernel:
+	cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
+	cl::Kernel kernel(program, kernel_name.data());
+
+	int num_in = 1;
+	int dimensions;
+
+	cl::Buffer output_buffer;
+	cl::Buffer A_buffer;
+	cl::Buffer strides_offsets_buffer;
+
+	std::vector<int> A_stride, output_stride;
+	int A_lin_offset, output_lin_offset;
+	int output_data_size, A_data_size;
+
+	negotiate_strides(A_shape, output_shape, A_offset, output_offset, A_offset_end, output_offset_end, A_stride, output_stride, A_lin_offset, output_lin_offset, dimensions, A_data_size, output_data_size);
+
+	// [strides] [offsets] [out shape] [out end offset]
+	// 3*D      + 4d      + D         + D
+	// Total length is 8D where D is dimension of output
+	std::vector<int> strides_offsets(8 * dimensions);
+
+	for (int i = 0; i<dimensions; i++){
+		strides_offsets[i] = A_stride[i];
+		strides_offsets[i+2*dimensions] = output_stride[i];
+
+		strides_offsets[i+3*dimensions] = A_offset[i];
+		strides_offsets[i+5*dimensions] = output_offset[i];
+
+		strides_offsets[i+6*dimensions] = output_shape[i];
+		strides_offsets[i+7*dimensions] = output_offset_end[i];
+	}
+
+	A_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * A_data_size, inputs[0]);
+
+	output_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(double) * output_data_size, outputs[0]);
+	strides_offsets_buffer = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(int) * 8 * dimensions, strides_offsets.data());
+
+	assert(output_shape.size() == dimensions);
+	assert(output_stride.size() == dimensions);
+	assert(output_offset.size() == dimensions);
+	assert(output_offset_end.size() == dimensions);
+
+	kernel.setArg(0, A_buffer);
+	kernel.setArg(1, output_buffer);
+	kernel.setArg(2, A_lin_offset);
+	kernel.setArg(3, output_lin_offset);
+	kernel.setArg(4, strides_offsets_buffer);
+	kernel.setArg(5, dimensions);
+
+	q.enqueueMigrateMemObjects({A_buffer}, 0);
+	q.enqueueMigrateMemObjects({output_buffer}, 0);
+	q.enqueueMigrateMemObjects({strides_offsets_buffer}, 0);
+
+	q.finish();
+
+	q.enqueueTask(kernel);
+	q.finish();
+	q.enqueueMigrateMemObjects({output_buffer}, CL_MIGRATE_MEM_OBJECT_HOST); // 1 : migrate from dev to host
+
+	q.finish();
+}
+
 void run_broadcast_kernel(std::string kernel_name,
 							std::vector<double *> &inputs,
 							std::vector<double *> &outputs,
@@ -303,6 +378,7 @@ void run_broadcast_kernel(std::string kernel_name,
 	//setup program and kernel:
 	cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
 	cl::Kernel kernel(program, kernel_name.data());
+
 	std::cout << "INFO: Kernel '" << kernel_name << "' has been created" << std::endl;
 
 	int num_in = 2;
@@ -326,46 +402,6 @@ void run_broadcast_kernel(std::string kernel_name,
 	negotiate_strides(A_shape, output_shape, A_offset, output_offset, A_offset_end, output_offset_end, A_stride, output_stride, A_lin_offset, output_lin_offset, dimensions, A_data_size, output_data_size);
 	negotiate_strides(B_shape, output_shape_B_copy, B_offset, output_offset_B_copy, B_offset_end, output_offset_end_B_copy, B_stride, output_stride_B_copy, B_lin_offset, output_lin_offset_B_copy, dimensions, B_data_size, output_data_size_B_copy);
 
-	//create "looping over" vectors (seems stupid to it this way...)
-
-	//print debug info:
-/*	std::cout << "Sending n="<<dimensions << std::endl;
-
-	std::cout << "A_shapes: ";
-	print_vec(A_shape);
-	std::cout << "B_shapes: ";
-	print_vec(B_shape);
-	std::cout << "Out_shapes ";
-	print_vec(output_shape);
-
-	std::cout << "A_offset: ";
-	print_vec(A_offset);
-	std::cout << "B_offset: ";
-	print_vec(B_offset);
-	std::cout << "out_offset: ";
-	print_vec(output_offset);
-
-	std::cout << "A_lin_offset: " << A_lin_offset << std::endl;
-	std::cout << "B_lin_offset: " << B_lin_offset << std::endl;
-	std::cout << "output_lin_offset: " << output_lin_offset << std::endl;
-
-	std::cout << "A_offset_end: ";
-	print_vec(A_offset_end);		
-	std::cout << "B_offset_end: ";
-	print_vec(B_offset_end);		
-	std::cout << "out_offset_end: ";
-	print_vec(output_offset_end);
-
-	std::cout << "A strides: ";
-	print_vec(input_strides[0]);
-	std::cout << "B strides: ";
-	print_vec(input_strides[1]);
-	std::cout << "O strides: ";
-	print_vec(output_stride);
-
-	std::cout << "Input size: " << data_sizes_input[0] << ", " << data_sizes_input[1] << std::endl;
-	std::cout << "Output size: " << output_data_size << std::endl;
-*/
 	// [strides] [offsets] [out shape] [out end offset]
 	// 3*D      + 4d      + D         + D
 	// Total length is 8D where D is dimension of output
@@ -395,8 +431,6 @@ void run_broadcast_kernel(std::string kernel_name,
 	assert(output_offset.size() == dimensions);
 	assert(output_offset_end.size() == dimensions);
 
-	std::cout << "INFO: Buffers has been created" << std::endl;
-
 	kernel.setArg(0, A_buffer);
 	kernel.setArg(1, B_buffer);
 	kernel.setArg(2, output_buffer);
@@ -406,23 +440,16 @@ void run_broadcast_kernel(std::string kernel_name,
 	kernel.setArg(6, strides_offsets_buffer);
 	kernel.setArg(7, dimensions);
 
-
 	q.enqueueMigrateMemObjects({A_buffer}, 0);
 	q.enqueueMigrateMemObjects({B_buffer}, 0);
 	q.enqueueMigrateMemObjects({output_buffer}, 0);
 	q.enqueueMigrateMemObjects({strides_offsets_buffer}, 0);
 
-	std::cout << "INFO: outputs has been set\n";
-
 	q.finish();
-
-	std::cout << "INFO: Arguments are set\n";
 
 	q.enqueueTask(kernel);
 	q.finish();
 	q.enqueueMigrateMemObjects({output_buffer}, CL_MIGRATE_MEM_OBJECT_HOST); // 1 : migrate from dev to host
-
-	std::cout << "INFO: Migrated to back to host" << std::endl;
 
 	q.finish();
 }
@@ -433,7 +460,7 @@ void run_gtsv(int kernel_size, std::vector<double *> &inputs, std::vector<cl::De
 	int N_pow_2 = next_largets_factor_2(kernel_size); // For some reason, gtsv kernel only works when its powers of two sized input. We are going to zero pad!
 	std::string kernel_name = "gtsv" + std::to_string(N_pow_2);
 
-	std::cout << "Running kernel: " << kernel_name << std::endl;
+	std::cout << "INFO: Kernel '" << kernel_name << "' has been created" << std::endl;
 
 	cl::Program program(context, devices, bins); //Note. we use devices not device here!!!
 	cl::Kernel kernel(program, kernel_name.data());
@@ -505,7 +532,6 @@ void run_gtsv(int kernel_size, std::vector<double *> &inputs, std::vector<cl::De
 
 	q.enqueueMigrateMemObjects(ob_in, 0, nullptr, &kernel_evt[0][0]); // 0 : migrate from host to dev
 	q.finish();
-	std::cout << "INFO: Finish data transfer from host to device" << std::endl;
 
 	// Setup kernel
 	kernel.setArg(0, N_pow_2);
@@ -514,7 +540,6 @@ void run_gtsv(int kernel_size, std::vector<double *> &inputs, std::vector<cl::De
 	kernel.setArg(3, matdiagup_buffer);
 	kernel.setArg(4, rhs_buffer);
 	q.finish();
-	std::cout << "INFO: Finish kernel setup" << std::endl;
 
 	q.enqueueTask(kernel, nullptr, nullptr);
 	q.finish();
@@ -582,38 +607,6 @@ void run_where_kernel(std::string kernel_name,
 	negotiate_strides(B_shape, output_shape_B_copy, B_offset, output_offset_B_copy, B_offset_end, output_offset_end_B_copy, B_stride, output_stride_B_copy, B_lin_offset, output_lin_offset_B_copy, dimensions, B_data_size, output_data_size_B_copy);
 	negotiate_strides(C_shape, output_shape_C_copy, C_offset, output_offset_C_copy, C_offset_end, output_offset_end_C_copy, C_stride, output_stride_C_copy, C_lin_offset, output_lin_offset_C_copy, dimensions, C_data_size, output_data_size_C_copy);
 
-	//print debug info:
-	std::cout << "A_shapes: ";
-	print_vec(A_shape);
-	std::cout << "B_shapes: ";
-	print_vec(B_shape);
-	std::cout << "C_shapes: ";
-	print_vec(C_shape);
-	std::cout << "Out_shapes ";
-	print_vec(output_shape);
-
-	std::cout << "A_offset: ";
-	print_vec(A_offset);
-	std::cout << "B_offset: ";
-	print_vec(B_offset);
-	std::cout << "C_offset: ";
-	print_vec(C_offset);
-	std::cout << "out_offset: ";
-	print_vec(output_offset);
-
-	std::cout << "A_offset_end: ";
-	print_vec(A_offset_end);		
-	std::cout << "B_offset_end: ";
-	print_vec(B_offset_end);
-	std::cout << "C_offset_end: ";
-	print_vec(C_offset_end);		
-	std::cout << "out_offset_end: ";
-	print_vec(output_offset_end);
-
-	std::cout << "Input size: " << A_data_size << ", " << B_data_size << ", " << C_data_size << std::endl;
-	std::cout << "Output size: " << output_data_size << std::endl;
-
-
 	// [strides] [offsets] [out shape] [out end offset]
 	// 4*D      + 4*D      + D         + D
 	// Total length is 10D where D is dimension of output
@@ -647,8 +640,6 @@ void run_where_kernel(std::string kernel_name,
 	assert(output_offset.size() == dimensions);
 	assert(output_offset_end.size() == dimensions);
 
-	std::cout << "INFO: Buffers has been created" << std::endl;
-
 	kernel.setArg(0, A_buffer);
 	kernel.setArg(1, B_buffer);
 	kernel.setArg(2, C_buffer);
@@ -667,18 +658,11 @@ void run_where_kernel(std::string kernel_name,
 	q.enqueueMigrateMemObjects({output_buffer}, 0);
 	q.enqueueMigrateMemObjects({strides_offsets_buffer}, 0);
 
-
-	std::cout << "INFO: outputs has been set\n";
-
 	q.finish();
-
-	std::cout << "INFO: Arguments are set\n";
 
 	q.enqueueTask(kernel);
 	q.finish();
 	q.enqueueMigrateMemObjects({output_buffer}, CL_MIGRATE_MEM_OBJECT_HOST); // 1 : migrate from dev to host
-
-	std::cout << "INFO: Migrated to back to host" << std::endl;
 
 	q.finish();
 }
@@ -861,12 +845,12 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},					//negativ end index
 		devices, context, bins, q);
 	
-	inputs = {uCFL.data(), zero.data()}; //second input does nothing abs only takes one input. needs to be here because run broadcast kernel is shit
+	inputs = {uCFL.data()}; //second input does nothing abs only takes one input. needs to be here because run broadcast kernel is shit
 	outputs = {uCFL.data()};
-	run_broadcast_kernel("abs4d", inputs, outputs, 
-		intermediate_shape, {1}, intermediate_shape,					//shapes
-		{0, 0, 0}, {0}, {0, 0, 0},						//start index
-		{0, 0, 0}, {0}, {0, 0, 0},					//negativ end index
+	run_1d_kernel("abs4d", inputs, outputs, 
+		intermediate_shape, intermediate_shape,					//shapes
+		{0, 0, 0}, {0, 0, 0},						//start index
+		{0, 0, 0}, {0, 0, 0},					//negativ end index
 		devices, context, bins, q);
 
 	// rjp
@@ -942,12 +926,12 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 	xt::xarray<double> eps = xt::ones<double>({1}) * 1e-20;
 	xt::xarray<double> abs_rj = xt::zeros_like(rj);
 
-	inputs = {rj.data(), zero.data()};
+	inputs = {rj.data()};
 	outputs = {abs_rj.data()};
-	run_broadcast_kernel("abs4d", inputs, outputs, 
-		intermediate_shape, {1}, intermediate_shape,					//shapes
-		{0, 0, 0}, {0,}, {0, 0, 0},						//start index
-		{0, 0, 0}, {0,}, {0, 0, 0},					//negativ end index
+	run_1d_kernel("abs4d", inputs, outputs, 
+		intermediate_shape, intermediate_shape,					//shapes
+		{0, 0, 0}, {0, 0, 0},						//start index
+		{0, 0, 0}, {0, 0, 0},					//negativ end index
 		devices, context, bins, q);
 
 	inputs = {eps.data(), abs_rj.data()};
@@ -1052,12 +1036,12 @@ void adv_superbee(xt::xarray<double> &vel, xt::xarray<double> &var, xt::xarray<d
 		velfac_ends, ends[1], out_ends,					//negativ end index
 		devices, context, bins, q);
 
-	inputs = {out.data(), zero.data()}; 	
+	inputs = {out.data()}; 	
 	outputs = {out.data()};
-	run_broadcast_kernel("abs4d", inputs, outputs, 
-		out_shape, {1}, out_shape,					//shapes
-		out_starts, {0}, out_starts, 						//start index
-		out_ends, {0}, out_ends,					//negativ end index
+	run_1d_kernel("abs4d", inputs, outputs, 
+		out_shape, out_shape,					//shapes
+		out_starts, out_starts, 						//start index
+		out_ends, out_ends,					//negativ end index
 		devices, context, bins, q);
 
 	inputs = {out.data(), temp_out.data()}; 	
@@ -1169,6 +1153,11 @@ int main(int argc, const char *argv[])
 	cl::Program::Binaries bins = xcl::import_binary_file(xclbin_path);
 	devices.resize(1);
 
+	for (int i = 0; i< devices.size(); i ++){
+		device = devices[i];
+		std::cout << "Tryna program device: " << device.getInfo<CL_DEVICE_NAME>() << std::endl;
+	}
+
 	xt::xarray<double> u = xt::load_npy<double>("../src/numpy_files/u.npy");
 	xt::xarray<double> v = xt::load_npy<double>("../src/numpy_files/v.npy");
 	xt::xarray<double> w = xt::load_npy<double>("../src/numpy_files/w.npy");
@@ -1236,6 +1225,8 @@ int main(int argc, const char *argv[])
 		{-2, -2}, {0}, {0, 0}, 			//negativ end index
 		devices, context, bins, q);
 
+	std::cout << "this is ks: " << ks << std::endl;
+
 	//sqrttke
 	inputs = {tke.data(), zero.data()};
 	outputs = {sqrttke.data()};
@@ -1245,13 +1236,17 @@ int main(int argc, const char *argv[])
 		{0, 0, 0, -2}, {0}, {0, 0, 0}, 			//negativ end index
 		devices, context, bins, q);
 
-	inputs = {sqrttke.data(), zero.data()}; //sqrt takes one argument. zero does nothing
+	std::cout << "this is sqrttke after max: "  << sqrttke << std::endl;
+
+	inputs = {sqrttke.data()}; //sqrt takes one argument. zero does nothing
 	outputs = {sqrttke.data()};
-	run_broadcast_kernel("sqrt4d", inputs, outputs, 
-		{X, Y, Z,}, {1}, {X, Y, Z,},			//shapes
-		{0, 0, 0,}, {0}, {0, 0, 0,},			//start index
-		{0, 0, 0,}, {0}, {0, 0, 0}, 			//negativ end index
+	run_1d_kernel("sqrt4d", inputs, outputs, 
+		{X, Y, Z,}, {X, Y, Z,},			//shapes
+		{0, 0, 0,}, {0, 0, 0,},			//start index
+		{0, 0, 0,}, {0, 0, 0}, 			//negativ end index
 		devices, context, bins, q);
+
+	std::cout << "this is sqrttke: " << sqrttke << std::endl;
 
 	//delta
 	inputs = {kappaM.data(), kappaM.data()};
@@ -1262,7 +1257,7 @@ int main(int argc, const char *argv[])
 		{-2, -2, -1}, {-2, -2, 0}, {0, 0, -1}, 		//negativ end index
 		devices, context, bins, q);
 
-
+	std::cout << "this is delta after add: " << delta << std::endl;
 
 	inputs = {half.data(), delta.data()};
 	outputs = {delta.data()};
@@ -1272,6 +1267,8 @@ int main(int argc, const char *argv[])
 		{0,}, {0, 0, -1}, {0, 0, -1}, 				//negativ end index
 		devices, context, bins, q);
 
+	std::cout << "this is delta after mult: " << delta << std::endl;
+
 	inputs = {delta.data(), dzt.data()};
 	outputs = {delta.data()};
 	run_broadcast_kernel("div4d", inputs, outputs, 
@@ -1279,6 +1276,8 @@ int main(int argc, const char *argv[])
 		{0, 0, 0}, {1}, {0, 0, 0,},					//start index
 		{0, 0, -1}, {0}, {0, 0, -1}, 				//negativ end index
 		devices, context, bins, q);
+
+	std::cout << "this is delta after div: " << delta << std::endl;
 
 	//a_tri
 	inputs = {zero.data(), delta.data(), };
@@ -1575,12 +1574,12 @@ int main(int argc, const char *argv[])
 
 	xt::xarray<double> not_edge_mask = xt::zeros_like(edge_mask);
 	
-	inputs = {edge_mask.data(), zero.data()}; //not op actually takes 1 operand. the zero in this case is noop and be anything!
+	inputs = {edge_mask.data()}; //not op actually takes 1 operand. the zero in this case is noop and be anything!
 	outputs = {not_edge_mask.data()};
-	run_broadcast_kernel("not4d", inputs, outputs, 
-		{X-4, Y-4, Z}, {1}, {X-4, Y-4, Z},					//shapes
-		{0, 0, 0}, {0, }, {0, 0, 0},					//start index
-		{0, 0, 0}, {0, }, {0, 0, 0},						//negativ end index
+	run_1d_kernel("not4d", inputs, outputs, 
+		{X-4, Y-4, Z}, {X-4, Y-4, Z},					//shapes
+		{0, 0, 0}, {0, 0, 0},					//start index
+		{0, 0, 0}, {0, 0, 0},						//negativ end index
 		devices, context, bins, q);
 	
 	inputs = {not_edge_mask.data(), a_tri.data()};
@@ -2121,37 +2120,17 @@ int main(int argc, const char *argv[])
 		{0, 0, 0}, {0, 0, 0, -1}, {0, 0, 0, -1},					//negativ end index
 		devices, context, bins, q);
 
-	std::cout << "sqrttke checksum: should be 1679...: " << xt::sum(sqrttke) << std::endl;
-	std::cout << "ks checksum: should be 377...: " << xt::sum(ks) << std::endl;
-	std::cout << "delta checksum: should be 85...: " << xt::sum(delta) << std::endl;
-	std::cout << "diagonals checksum might change if mask is applied!!!" << std::endl;  
-	std::cout << "a_tri checksum: should be 689.96 (392.9)...: " << xt::sum(a_tri) << std::endl;
-	std::cout << "b_tri checksum: should be -629 (208.8)...: " << xt::sum(b_tri) << std::endl;
-	std::cout << "b_tri_edge checksum: should be 527...: " << xt::sum(b_tri_edge) << std::endl;
-	std::cout << "c_tri checksum: should be 835 (532.4)...: " << xt::sum(c_tri) << std::endl;
-	std::cout << "d_tri checksum: should be 115.9 (-2157.7)...: " << xt::sum(d_tri) << std::endl;
-
-	std::cout << "land_mask checksum: should be 584...:" << xt::sum(land_mask) << std::endl;
-	std::cout << "edge_mask checksum: should be 584...:" << xt::sum(edge_mask) << std::endl;
-	std::cout << "water_mask checksum: should be 1759...:" << xt::sum(water_mask) << std::endl;	
-	
-	std::cout << "not_edge_mask checksum: should be 2552...:" << xt::sum(not_edge_mask) << std::endl;
-	std::cout << "gtsv doesnt work atm. we hijack checksums to follow wrong solution to implement rest of the code while debug...\n";
-	std::cout << "tke checksum: should be -2052.5 (-926.5)...: " << xt::sum(tke) << std::endl;
-	std::cout << "tke_tmp checksum: should be -2052.5 (-926.5)...: " << xt::sum(tke_temp) << std::endl;
-
-
-	std::cout << "mask:.. (263) "<< xt::sum(mask) << std::endl;	
+	std::cout << "sqrttke checksum: " << xt::sum(sqrttke) << std::endl;
+	std::cout << "delta checksum: : " << xt::sum(delta) << std::endl;
+	std::cout << "a_tri checksum: " << xt::sum(a_tri) << std::endl;
+	std::cout << "b_tri checksum: " << xt::sum(b_tri) << std::endl;
+	std::cout << "c_tri checksum: " << xt::sum(c_tri) << std::endl;
+	std::cout << "d_tri (this is sol) checksum: " << xt::sum(d_tri) << std::endl;
+	std::cout << "tke checksum: " << xt::sum(tke) << std::endl;
 	std::cout << "tke surf corr (334.4).. " << xt::sum(tke_surf_corr) << std::endl;
-
 	std::cout << "flux east (8060969).. " << xt::sum(flux_east) << std::endl;
 	std::cout << "flux north (48331).. " << xt::sum(flux_north) << std::endl;
 	std::cout << "flux top (-20.9) " << xt::sum(flux_top) << std::endl;
-
-	std::cout << "maskUtr (2558)..: " << xt::sum(maskUtr) << std::endl;
-	std::cout << "maskVtr (2558)..: " << xt::sum(maskVtr) << std::endl;
-	std::cout << "maskWtr (2558)..: " << xt::sum(maskWtr) << std::endl;
-
 	std::cout << "dtke (-600012) " << xt::sum(dtke) << std::endl;
 	return 0;
 }
