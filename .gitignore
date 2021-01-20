@@ -7,3 +7,13 @@
 *settings*
 **/dump
 *.vscode
+**/.ipconfig/
+**/.ipcache/
+*.npy
+*.npz
+*.csv
+*link_summary
+*.protoinst
+*.wcfg
+*.wdb
+*.info
