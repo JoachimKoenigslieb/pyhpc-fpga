@@ -20,7 +20,7 @@ $(TARGET)_objects/%.xo: $(KERNEL_DIR)/%.cpp
 	v++ -t $(TARGET) --config design.cfg -c -k $(basename $(notdir $<)) $(KERNEL_INCLUDES) -o $@ $<
 
 host: $(SRC_DIR)/host.cpp
-	g++ -o host $< ${HOST_INCLUDES} ${HOST_LIBS} -g
+	g++ -o ${TARGET}_host $< ${HOST_INCLUDES} ${HOST_LIBS} -g
 
 clean:
 	rm -f *.log
