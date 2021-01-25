@@ -588,11 +588,7 @@ int main(int argc, const char *argv[])
 
 	inputs = {<args>}; 
 	outputs = {res_compute.data()};
-	<kernelType>("<func>4d", inputs, outputs, 
-			<XYZIO>,                                       //shapes
-			<ShapeIO>,                                              //start index
-			<ShapeIO>,                                              //start index
-			devices, context, bins, q);
+	<kernelRun>
 
 	std::cout << "checksum numpy: \t\t" << xt::sum(res) << "\nvs computed fpga: \t" << xt::sum(res_compute) << std::endl;
 

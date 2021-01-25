@@ -3,15 +3,14 @@
 #include <sys/time.h>
 #include <algorithm>
 #include <math.h>
-#include "cnpy.h"
 #include <iostream>
-#include "xtensor/xarray.hpp"
-#include "xtensor/xnpy.hpp"
-#include "xtensor/xview.hpp"
-#include "xtensor/xio.hpp"
-#include "xtensor/xadapt.hpp"
+#include <xtensor/xarray.hpp>
+#include <xtensor/xnpy.hpp>
+#include <xtensor/xview.hpp>
+#include <xtensor/xio.hpp>
+#include <xtensor/xadapt.hpp>
 
-#include "xcl2.cpp"
+#include <xcl2/xcl2.cpp>
 
 #define X 6
 #define Y 6
@@ -1145,7 +1144,17 @@ private:
 int main(int argc, const char *argv[])
 {
 	// Init of FPGA device
-	std::string xclbin_path = "./sw_emu_kernels.xclbin";
+
+	ArgParser parser(argc, argv);
+
+	std::string xclbin_path;
+
+	// Init of FPGA device
+	
+	if (!parser.getCmdOption("-xclbin", xclbin_path)){
+		std::cout << "please set -xclbin path!" << std::endl;
+	}
+
 	std::vector<cl::Device> devices = xcl::get_xil_devices();
 	cl::Device device = devices[0];
 	cl::Context context(device);

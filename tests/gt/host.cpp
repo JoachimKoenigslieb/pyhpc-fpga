@@ -590,10 +590,10 @@ int main(int argc, const char *argv[])
 	inputs = {arg0.data(), arg1.data()}; 
 	outputs = {res_compute.data()};
 	run_broadcast_kernel("gt4d", inputs, outputs, 
-			{X, Y, Z,}, {X, Y, Z,}, {X, Y, Z,},                                       //shapes
-			{0, 0, 0,}, {0, 0, 0,}, {0, 0, 0,},                                              //start index
-			{0, 0, 0,}, {0, 0, 0,}, {0, 0, 0,},                                              //start index
-			devices, context, bins, q);
+		{X, Y, Z,}, 		{X, Y, Z,}, 		{X, Y, Z,},
+		{0, 0, 0,}, 		{0, 0, 0,}, 		{0, 0, 0,},
+		{0, 0, 0,}, 		{0, 0, 0,}, 		{0, 0, 0,},
+devices, context, bins, q);
 
 	std::cout << "checksum numpy: \t\t" << xt::sum(res) << "\nvs computed fpga: \t" << xt::sum(res_compute) << std::endl;
 

@@ -589,10 +589,10 @@ int main(int argc, const char *argv[])
 	inputs = {arg0.data()}; 
 	outputs = {res_compute.data()};
 	run_1d_kernel("not4d", inputs, outputs, 
-			{X, Y, Z,}, {X, Y, Z,},                                       //shapes
-			{0, 0, 0,}, {0, 0, 0,},                                              //start index
-			{0, 0, 0,}, {0, 0, 0,},                                              //start index
-			devices, context, bins, q);
+		{X, Y, Z,}, 		{X, Y, Z,},
+		{0, 0, 0,}, 		{0, 0, 0,},
+		{0, 0, 0,}, 		{0, 0, 0,},
+devices, context, bins, q);
 
 	std::cout << "checksum numpy: \t\t" << xt::sum(res) << "\nvs computed fpga: \t" << xt::sum(res_compute) << std::endl;
 

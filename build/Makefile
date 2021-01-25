@@ -1,26 +1,33 @@
 SRC_DIR := ../src
 KERNEL_DIR := ${SRC_DIR}/kernels
 OBJ_DIR := ./objects
+
 TARGET := sw_emu
+PLATFORM := xilinx_u200_xdma_201830_2 
 
-KERNEL_INCLUDES := -I${SRC_DIR}/xf_solver/L2/include/ -I${SRC_DIR}/xcl2/
+KERNEL_INCLUDES := -I/tools/Xilinx/Vivado/2020.1/include/
 
-HOST_INCLUDES := -I/opt/xilinx/xrt/include/ -I/tools/Xilinx/Vivado/2020.1/include/ -I../src/xcl2/ -I${SRC_DIR}/xcl2/ 
-HOST_LIBS  := -L/opt/xilinx/xrt/lib/ -L/usr/local/lib -L/usr/lib -lOpenCL -lcnpy -lz -lpthread -lrt -lstdc++ -std=c++14 -w -O0 -g
+HOST_INCLUDES := -I/opt/xilinx/xrt/include/ -I/tools/Xilinx/Vivado/2020.1/include/ -I${SRC_DIR}/includes/
+
+HOST_LIBS  := -L/opt/xilinx/xrt/lib/ -L/usr/local/lib -L/usr/lib -lOpenCL -lz -lpthread -lrt -lstdc++ -std=c++14 -w -O0 -g 
 
 SOURCES := $(wildcard ${KERNEL_DIR}/*.cpp)
 OBJECTS := $(patsubst %.cpp,%.xo,$(addprefix $(TARGET)_objects/,$(notdir $(SOURCES))))
 
-$(info $$var is [${OBJECTS}])
+all: host ${TARGET}_kernels.xclbin
 
-$(TARGET)_kernels.xclbin: $(OBJECTS)
-	v++ -t $(TARGET) --config design.cfg -l -g -o $@ $^
+$(TARGET)_kernels.xclbin: $(OBJECTS) 
+	emconfigutil --platform ${PLATFORM}
+	v++ -t $(TARGET) --platform ${PLATFORM} --config design.cfg -l -g -o $@ $^
 
 $(TARGET)_objects/%.xo: $(KERNEL_DIR)/%.cpp
-	v++ -t $(TARGET) --config design.cfg -c -k $(basename $(notdir $<)) $(KERNEL_INCLUDES) -o $@ $<
+	v++ -t $(TARGET) --platform ${PLATFORM} --config design.cfg -c -k $(basename $(notdir $<)) $(KERNEL_INCLUDES) -o $@ $<
+
+emconfig.json:
+	emconfigutil --platform ${PLATFORM}
 
 host: $(SRC_DIR)/host.cpp
-	g++ -o ${TARGET}_host $< ${HOST_INCLUDES} ${HOST_LIBS} -g
+	g++ -o host $< ${HOST_INCLUDES} ${HOST_LIBS} -g
 
 clean:
 	rm -f *.log
@@ -29,5 +36,8 @@ clean:
 	rm -rf ./_x
 	rm -rf ./.run
 	rm -rf ./.Xil
-	rm ./objects_hw_emu/*compile_summary
-	rm ./objects_sw_emu/*compile_summary
+	rm -f ./objects_hw_emu/*compile_summary
+	rm -f ./objects_sw_emu/*compile_summary
+	rm -f *.wdb
+	rm -f *.protoinst
+	rm -f *.wcfg

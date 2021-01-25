@@ -3,7 +3,6 @@
 #include <sys/time.h>
 #include <algorithm>
 #include <math.h>
-#include "cnpy.h"
 #include <iostream>
 #include "xtensor/xarray.hpp"
 #include "xtensor/xnpy.hpp"
@@ -454,7 +453,7 @@ void run_broadcast_kernel(std::string kernel_name,
 int main(int argc, const char *argv[])
 {
 	// Init of FPGA device
-	std::string xclbin_path = "./hw_emu_kernels.xclbin";
+	std::string xclbin_path = "./hw_kernels.xclbin";
 	std::vector<cl::Device> devices = xcl::get_xil_devices();
 	cl::Device device = devices[0];
 	cl::Context context(device);
@@ -462,9 +461,9 @@ int main(int argc, const char *argv[])
 	cl::Program::Binaries bins = xcl::import_binary_file(xclbin_path);
 	devices.resize(1);
 
-	xt::xarray<double> u = xt::load_npy<double>("../src/numpy_files/u.npy");
-	xt::xarray<double> v = xt::load_npy<double>("../src/numpy_files/v.npy");
-	xt::xarray<double> w = xt::load_npy<double>("../src/numpy_files/w.npy");
+	xt::xarray<double> u = xt::load_npy<double>("./u.npy");
+	xt::xarray<double> v = xt::load_npy<double>("./v.npy");
+	xt::xarray<double> w = xt::zeros_like(v);
 
 	std::vector<double *> inputs, outputs;
 
