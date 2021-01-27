@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "xf_solver_L2.hpp"
+#include <xf_solver/xf_solver_L2.hpp>
 
 #define NRC 16
 #define NCU 1

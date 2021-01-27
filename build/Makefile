@@ -5,7 +5,7 @@ OBJ_DIR := ./objects
 TARGET := sw_emu
 PLATFORM := xilinx_u200_xdma_201830_2 
 
-KERNEL_INCLUDES := -I/tools/Xilinx/Vivado/2020.1/include/
+KERNEL_INCLUDES := -I/tools/Xilinx/Vivado/2020.1/include/ -I${SRC_DIR}/includes/
 
 HOST_INCLUDES := -I/opt/xilinx/xrt/include/ -I/tools/Xilinx/Vivado/2020.1/include/ -I${SRC_DIR}/includes/
 
