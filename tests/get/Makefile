@@ -1,10 +1,10 @@
 KERNEL_DIR := ./kernels
 OBJ_DIR := ./objects
-TARGET := hw_emu
+TARGET := sw_emu
 
-KERNEL_INCLUDES := -I../shared/xcl2/
+KERNEL_INCLUDES := -I../shared/includes/
 
-HOST_INCLUDES := -I/opt/xilinx/xrt/include/ -I/tools/Xilinx/Vivado/2020.1/include/ -I../shared/xcl2/
+HOST_INCLUDES := -I/opt/xilinx/xrt/include/ -I/tools/Xilinx/Vivado/2020.1/include/ -I../shared/includes/
 HOST_LIBS  := -L/opt/xilinx/xrt/lib/ -L/usr/local/lib -L/usr/lib -lOpenCL -lcnpy -lz -lpthread -lrt -lstdc++ -std=c++14 -w -O0 -g
 
 SOURCES := $(wildcard ${KERNEL_DIR}/*.cpp)

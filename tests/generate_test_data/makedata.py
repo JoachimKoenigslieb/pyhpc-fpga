@@ -124,10 +124,3 @@ for file in files:
 	if COMPILE_FPGA:
 		subprocess.run(['make'], stdout=True)
 		print(f'bin created for {file}')
-
-	
-
-print(host_code)
-
-
-
