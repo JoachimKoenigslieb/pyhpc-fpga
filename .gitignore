@@ -16,3 +16,4 @@ host
 *.wcfg
 *.csv
 *.protoinst
+/tests/
