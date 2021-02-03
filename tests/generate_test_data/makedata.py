@@ -55,7 +55,8 @@ os.environ["PATH"] = """/opt/xilinx/xrt/bin:/tools/Xilinx/Vitis/2020.1/bin:/tool
 os.environ["LD_LIBRARY_PATH"] = "/opt/xilinx/xrt/lib:/opt/xilinx/xrt/lib:"
 os.environ["PYTHONPATH"] = "/opt/xilinx/xrt/python:/opt/xilinx/xrt/python:"
 
-BASE = '/home/joachim/Documents/speciale/vitis/veros-port/tests'
+
+BASE = '/'.join(os.getcwd().split('/')[:-1])
 
 npfuncs = {func_name: np.__dict__[func_name if func_name not in nptranslater else nptranslater[func_name]] for func_name in files}
 
