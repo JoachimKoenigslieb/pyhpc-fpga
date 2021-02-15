@@ -1,14 +1,45 @@
 #include <iostream>
 #include <string.h>
-#include "cnpy.h"
+#include <sys/time.h>
+#include <algorithm>
+#include <math.h>
 #include <iostream>
+#include <xtensor/xarray.hpp>
+#include <xtensor/xnpy.hpp>
+#include <xtensor/xview.hpp>
+#include <xtensor/xio.hpp>
+#include <xtensor/xadapt.hpp>
 
-#include <random>
-#include "xcl2.cpp"
+#include <xcl2/xcl2.cpp>
 
 extern "C" {
     void dgtsv_(int*, int*, double*, double*, double*, double*, int*, int*);
 }
+
+class ArgParser
+{
+public:
+	ArgParser(int &argc, const char **argv)
+	{
+		for (int i = 1; i < argc; ++i)
+			mTokens.push_back(std::string(argv[i]));
+	}
+	bool getCmdOption(const std::string option, std::string &value) const
+	{
+		std::vector<std::string>::const_iterator itr;
+		itr = std::find(this->mTokens.begin(), this->mTokens.end(), option);
+		if (itr != this->mTokens.end() && ++itr != this->mTokens.end())
+		{
+			value = *itr;
+			return true;
+		}
+		return false;
+	}
+
+private:
+	std::vector<std::string> mTokens;
+};
+
 
 // Memory alignment
 template <typename T>
@@ -76,8 +107,6 @@ void run_gtsv(int kernel_size, std::vector<double *> &inputs, std::vector<cl::De
 	mext_io[2].flags = XCL_MEM_DDR_BANK3;
 	mext_io[3].flags = XCL_MEM_DDR_BANK3;
 
-	inputs[0][0] = 0; 	//on a tri-diagonal matrix, upper and lower diagonals have n-1 entries. We zero them like this to fit gtsv kernel convetion
-	inputs[2][kernel_size - 1] = 0;
 
 	double* a_tri_padded = aligned_alloc<double>(N_pow_2);
 	double* b_tri_padded = aligned_alloc<double>(N_pow_2);
@@ -102,6 +131,9 @@ void run_gtsv(int kernel_size, std::vector<double *> &inputs, std::vector<cl::De
 		c_tri_padded[i] = 0;
 		d_tri_padded[i] = 0;
 	}
+
+	a_tri_padded[0] = 0;
+	c_tri_padded[kernel_size - 1] = 0;
 
 	mext_io[0].obj = a_tri_padded;
 	mext_io[0].param = 0;
@@ -157,8 +189,18 @@ void run_gtsv(int kernel_size, std::vector<double *> &inputs, std::vector<cl::De
 	}
 }
 
-int main(){
-	std::string xclbin_path = "./hw_emu_kernels.xclbin";
+int main(int argc, const char *argv[]){
+	// Init of FPGA device
+	ArgParser parser(argc, argv);
+
+	std::string xclbin_path;
+
+	// Init of FPGA device
+
+	if (!parser.getCmdOption("-xclbin", xclbin_path)){
+		std::cout << "please set -xclbin path!" << std::endl;
+	}
+
 	std::vector<cl::Device> devices = xcl::get_xil_devices();
 	cl::Device device = devices[0];
 	cl::Context context(device);
@@ -166,131 +208,31 @@ int main(){
 	cl::Program::Binaries bins = xcl::import_binary_file(xclbin_path);
 	devices.resize(1);
 
-	int N = 10; //should be 3136 or 4096. You can also compile a new kernel
+	int N = 16; //should be 3136 or 4096. You can also compile a new kernel
 	//N = next_largets_factor_2(N); // we try to pad to a factor of two in the hopes that this is what causes errors!
 
-	double* a_tri = aligned_alloc<double>(N);
-	double* b_tri = aligned_alloc<double>(N);
-	double* c_tri = aligned_alloc<double>(N);
-	double* d_tri = aligned_alloc<double>(N);
-	double* rhs_copy = aligned_alloc<double>(N);
+	xt::xarray<double> arg0 = xt::load_npy<double>("gtsv_arg0.npy");
+	xt::xarray<double> arg1 = xt::load_npy<double>("gtsv_arg1.npy");
+	xt::xarray<double> arg2 = xt::load_npy<double>("gtsv_arg2.npy");
+	xt::xarray<double> arg3 = xt::load_npy<double>("gtsv_arg3.npy");
+	xt::xarray<double> arg3_copy = xt::zeros_like(arg3);
 
-	double err = 0.0;
-
-	double lower_bound = 0;
-	double upper_bound = 10;
-	std::uniform_real_distribution<double> unif(lower_bound, upper_bound);
-	std::default_random_engine re(4); //fixed seed
-
-	int mode = 0;
-	int verbose = 1;
-
-	//random random data into tris and rhs. Save a copy of rhs, this will be overwritten in-place!
-	if (mode == 0) {
-		for (int i=0; i<N; i++){
-			a_tri[i] = unif(re);
-			b_tri[i] = unif(re);
-			c_tri[i] = unif(re);
-			d_tri[i] = unif(re);
-			rhs_copy[i] = d_tri[i]; //save this, as d_tri will get written to in-place!
-		}
-	} else {
-		for (int i = 0; i < N; i++) {
-			a_tri[i] = -1.0;
-			b_tri[i] = 2.0;
-			c_tri[i] = -1.0;
-			d_tri[i] = 0.0;
-			rhs_copy[i] = d_tri[i];
-		};
-
-		d_tri[N - 1] = 1.0;
-		d_tri[0] = 1.0;
-		rhs_copy[0] = d_tri[0];
-		rhs_copy[N -1] = d_tri[N -1];
+	for (int i=0; i<N; i++){
+		arg3_copy[i] = arg3[i];
 	}
 
-	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "a_tri", a_tri, {N}, "w");
-	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "b_tri", b_tri, {N}, "a");
-	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "c_tri", c_tri, {N}, "a");
-	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "d_tri", d_tri, {N}, "a");
-	std::cout << "Wrote diagonals...";
+	xt::xarray<double> res = xt::load_npy<double>("./gtsv_result.npy");
 
 	std::vector<double*> inputs, outputs;
 
-	inputs = {a_tri, b_tri, c_tri, d_tri};
+	inputs = {arg0.data(), arg1.data(), arg2.data(), arg3.data()};
+	std::cout << xt::sum(arg0) << ", " << xt::sum(arg1) << ", " << xt::sum(arg2) << ", " << xt::sum(arg3) << std::endl;
 	run_gtsv(N, inputs, devices, context, bins, q); //this outputs solution into d_tri 
 	q.finish();
-	std::cout << "The thing we get out of gtsv... : "; print_arr(d_tri, N); 
 
-	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "xilinx_sol", d_tri, {N}, "a");
-	
-	double xilinx_error;
+ 	std::cout << "checksum scipy (lapack): \t\t" << xt::sum(res) << "\nvs computed fpga: \t" << xt::sum(arg3) << std::endl;
 
-	xilinx_error = check_tridiag_solution(a_tri, b_tri, c_tri, rhs_copy, d_tri, N, verbose);
+	std::cout << "check if this is a solution..: " << check_tridiag_solution(arg0.data(), arg1.data(), arg2.data(), arg3_copy.data(), arg3.data(), N, 0) << " should be low!";
 
-	double sum_solution = 0;
-	for (int i=0; i<N; i++){
-		sum_solution += d_tri[i];
-	}
-	std::cout << "accumulated error of solution /w xf::solver " << xilinx_error << std::endl;
- 	std::cout << "sum of solution /w xf::solver: " << sum_solution << std::endl;
-
-	//Now for lapack test:
-	std::default_random_engine reMix(4); //fixed seed
-	double* a_tri_copy = aligned_alloc<double>(N);
-	double* b_tri_copy = aligned_alloc<double>(N);
-	double* c_tri_copy = aligned_alloc<double>(N);
-
-	if (mode == 0) {
-		for (int i=0; i<N; i++){
-			a_tri[i] = unif(reMix);
-			b_tri[i] = unif(reMix);
-			c_tri[i] = unif(reMix);
-			d_tri[i] = unif(reMix);
-			rhs_copy[i] = d_tri[i]; //save this, as d_tri will get written to in-place!
-			a_tri_copy[i] = a_tri[i];
-			b_tri_copy[i] = b_tri[i];
-			c_tri_copy[i] = c_tri[i]; //lapack will destroy my data
-		}
-	} else {
-		for (int i = 0; i < N; i++) {
-			a_tri[i] = -1.0;
-			b_tri[i] = 2.0;
-			c_tri[i] = -1.0;
-			d_tri[i] = 0.0;
-			rhs_copy[i] = d_tri[i];
-			a_tri_copy[i] = a_tri[i];
-			b_tri_copy[i] = b_tri[i];
-			c_tri_copy[i] = c_tri[i]; //lapack will destroy my data
-		};
-
-		d_tri[N - 1] = 1.0;
-		d_tri[0] = 1.0;
-		rhs_copy[0] = d_tri[0];
-		rhs_copy[N -1] = d_tri[N -1];
-	}
-
-	a_tri[0] = 0.0;
-	c_tri[N-1] = 0.0;
-
-	int info = 0;
-	int NHRS = 1;
-	int LDB = N; 
-
-	dgtsv_(&N, &NHRS, &a_tri[1], b_tri, c_tri, d_tri, &LDB, &info); //call lapack
-	cnpy::npz_save("tridiag_data"+std::to_string(N) +".npz", "lapack_sol", d_tri, {N}, "a");
-
-	double lapack_error;
-
-	lapack_error = check_tridiag_solution(a_tri_copy, b_tri_copy, c_tri_copy, rhs_copy, d_tri, N, verbose);
-
-	sum_solution = 0;
-	for (int i=0; i<N; i++){
-		sum_solution += d_tri[i];
-	}
-
-	std::cout << "accumulated error of solution /w lapack " << lapack_error << std::endl;
-	std::cout << "sum of solution /w lapack: " << sum_solution << std::endl;
- 
 	return 0;
 }
