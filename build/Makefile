@@ -29,6 +29,9 @@ emconfig.json:
 host: $(SRC_DIR)/host.cpp
 	g++ -o host $< ${HOST_INCLUDES} ${HOST_LIBS} -g
 
+host_aligned: $(SRC_DIR)/host_aligned.cpp ${SRC_DIR}/includes/runKernels.cpp
+	g++ -o host_aligned $^ ${HOST_INCLUDES} ${HOST_LIBS} -g
+
 clean:
 	rm -f *.log
 	rm -f *_summary
