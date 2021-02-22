@@ -16,7 +16,6 @@
 
 namespace xs = xsimd;
 
-
 #define X 6
 #define Y 6
 #define Z 4
