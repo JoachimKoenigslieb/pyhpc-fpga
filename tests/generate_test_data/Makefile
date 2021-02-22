@@ -2,9 +2,9 @@ KERNEL_DIR := ./kernels
 OBJ_DIR := ./objects
 TARGET := sw_emu
 
-KERNEL_INCLUDES := -I../shared/includes/
+KERNEL_INCLUDES := -I../../src/includes/
 
-HOST_INCLUDES := -I/opt/xilinx/xrt/include/ -I/tools/Xilinx/Vivado/2020.1/include/ -I../shared/includes/
+HOST_INCLUDES := -I/opt/xilinx/xrt/include/ -I/tools/Xilinx/Vivado/2020.1/include/ -I../../src/includes/
 HOST_LIBS  := -L/opt/xilinx/xrt/lib/ -L/usr/local/lib -L/usr/lib -lOpenCL -lz -lpthread -lrt -lstdc++ -std=c++14 -w -O0 -g
 
 SOURCES := $(wildcard ${KERNEL_DIR}/*.cpp)
@@ -16,8 +16,8 @@ $(TARGET)_kernels.xclbin: $(OBJECTS)
 $(TARGET)_objects/%.xo: $(KERNEL_DIR)/%.cpp
 	v++ -t $(TARGET) --config design.cfg -c -k $(basename $(notdir $<)) $(KERNEL_INCLUDES) -o $@ $<
 
-host: host.cpp
-	g++ -o host $< ${HOST_INCLUDES} ${HOST_LIBS} -g
+host: host.cpp ../../src/includes/runKernels.cpp
+	g++ -o host $^ ${HOST_INCLUDES} ${HOST_LIBS} -g
 
 clean:
 	rm -f *.log
