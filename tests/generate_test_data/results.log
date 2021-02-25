@@ -1,0 +1,251 @@
+Found Platform
+Platform Name: Xilinx
+INFO: Importing hw_emu_kernels.xclbin
+Loading: 'hw_emu_kernels.xclbin'
+tellg: 27238940
+INFO: [HW-EM 01] Hardware emulation runs simulation underneath. Using a large data set will result in long simulation times. It is recommended that a small dataset is used for faster execution. The flow uses approximate models for DDR memory and interconnect and hence the performance data generated is approximate.
+INFO: Kernel 'add4d' has been created
+checksum numpy: 		 145480.897167
+vs computed fpga: 	 145480.897167
+INFO::[ Vitis-EM 22 ] [Time elapsed: 0 minute(s) 15 seconds, Emulation time: 0.0222444 ms]
+Data transfer between kernel(s) and global memory(s)
+add4d_1:m_axi_gmem0-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+add4d_1:m_axi_gmem1-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+add4d_1:m_axi_gmem2-DDR[1]          RD = 0.000 KB               WR = 1.125 KB        
+add4d_1:m_axi_plmem0-DDR[1]          RD = 0.125 KB               WR = 0.000 KB        
+
+INFO: [HW-EM 06-0] Waiting for the simulator process to exit
+INFO: [HW-EM 06-1] All the simulator processes exited successfully
+Found Platform
+Platform Name: Xilinx
+INFO: Importing hw_emu_kernels.xclbin
+Loading: 'hw_emu_kernels.xclbin'
+tellg: 26799348
+INFO: [HW-EM 01] Hardware emulation runs simulation underneath. Using a large data set will result in long simulation times. It is recommended that a small dataset is used for faster execution. The flow uses approximate models for DDR memory and interconnect and hence the performance data generated is approximate.
+INFO: Kernel 'max4d' has been created
+checksum numpy: 		 96811.331072
+vs computed fpga: 	 96811.331072
+INFO::[ Vitis-EM 22 ] [Time elapsed: 0 minute(s) 15 seconds, Emulation time: 0.0206201 ms]
+Data transfer between kernel(s) and global memory(s)
+max4d_1:m_axi_gmem0-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+max4d_1:m_axi_gmem1-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+max4d_1:m_axi_gmem2-DDR[1]          RD = 0.000 KB               WR = 1.125 KB        
+max4d_1:m_axi_plmem0-DDR[1]          RD = 0.125 KB               WR = 0.000 KB        
+
+INFO: [HW-EM 06-0] Waiting for the simulator process to exit
+INFO: [HW-EM 06-1] All the simulator processes exited successfully
+Found Platform
+Platform Name: Xilinx
+INFO: Importing hw_emu_kernels.xclbin
+Loading: 'hw_emu_kernels.xclbin'
+tellg: 27691748
+INFO: [HW-EM 01] Hardware emulation runs simulation underneath. Using a large data set will result in long simulation times. It is recommended that a small dataset is used for faster execution. The flow uses approximate models for DDR memory and interconnect and hence the performance data generated is approximate.
+INFO: Kernel 'div4d' has been created
+checksum numpy: 		 283.224939
+vs computed fpga: 	 283.224939
+INFO::[ Vitis-EM 22 ] [Time elapsed: 0 minute(s) 16 seconds, Emulation time: 0.0206041 ms]
+Data transfer between kernel(s) and global memory(s)
+div4d_1:m_axi_gmem0-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+div4d_1:m_axi_gmem1-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+div4d_1:m_axi_gmem2-DDR[1]          RD = 0.000 KB               WR = 1.125 KB        
+div4d_1:m_axi_plmem0-DDR[1]          RD = 0.125 KB               WR = 0.000 KB        
+
+INFO: [HW-EM 06-0] Waiting for the simulator process to exit
+INFO: [HW-EM 06-1] All the simulator processes exited successfully
+Found Platform
+Platform Name: Xilinx
+INFO: Importing hw_emu_kernels.xclbin
+Loading: 'hw_emu_kernels.xclbin'
+tellg: 27700407
+INFO: [HW-EM 01] Hardware emulation runs simulation underneath. Using a large data set will result in long simulation times. It is recommended that a small dataset is used for faster execution. The flow uses approximate models for DDR memory and interconnect and hence the performance data generated is approximate.
+INFO: Kernel 'where4d' has been created
+checksum numpy: 		 66760.466435
+vs computed fpga: 	 0.
+INFO::[ Vitis-EM 22 ] [Time elapsed: 0 minute(s) 15 seconds, Emulation time: 0.0212065 ms]
+Data transfer between kernel(s) and global memory(s)
+where4d_1:m_axi_gmem0-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+where4d_1:m_axi_gmem1-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+where4d_1:m_axi_gmem2-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+where4d_1:m_axi_gmem3-DDR[1]          RD = 0.000 KB               WR = 0.000 KB        
+where4d_1:m_axi_plmem0-DDR[1]          RD = 0.156 KB               WR = 0.000 KB        
+
+INFO: [HW-EM 06-0] Waiting for the simulator process to exit
+INFO: [HW-EM 06-1] All the simulator processes exited successfully
+Found Platform
+Platform Name: Xilinx
+INFO: Importing hw_emu_kernels.xclbin
+Loading: 'hw_emu_kernels.xclbin'
+tellg: 26781964
+INFO: [HW-EM 01] Hardware emulation runs simulation underneath. Using a large data set will result in long simulation times. It is recommended that a small dataset is used for faster execution. The flow uses approximate models for DDR memory and interconnect and hence the performance data generated is approximate.
+checksum numpy: 		 3214.467909
+vs computed fpga: 	 3214.467909
+INFO::[ Vitis-EM 22 ] [Time elapsed: 0 minute(s) 14 seconds, Emulation time: 0.0212876 ms]
+Data transfer between kernel(s) and global memory(s)
+sqrt4d_1:m_axi_gmem0-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+sqrt4d_1:m_axi_gmem2-DDR[1]          RD = 0.000 KB               WR = 1.125 KB        
+sqrt4d_1:m_axi_plmem0-DDR[1]          RD = 0.094 KB               WR = 0.000 KB        
+
+INFO: [HW-EM 06-0] Waiting for the simulator process to exit
+INFO: [HW-EM 06-1] All the simulator processes exited successfully
+Found Platform
+Platform Name: Xilinx
+INFO: Importing hw_emu_kernels.xclbin
+Loading: 'hw_emu_kernels.xclbin'
+tellg: 26802443
+INFO: [HW-EM 01] Hardware emulation runs simulation underneath. Using a large data set will result in long simulation times. It is recommended that a small dataset is used for faster execution. The flow uses approximate models for DDR memory and interconnect and hence the performance data generated is approximate.
+INFO: Kernel 'gt4d' has been created
+checksum numpy: 		 88.
+vs computed fpga: 	 88.
+INFO::[ Vitis-EM 22 ] [Time elapsed: 0 minute(s) 15 seconds, Emulation time: 0.0228063 ms]
+Data transfer between kernel(s) and global memory(s)
+gt4d_1:m_axi_gmem0-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+gt4d_1:m_axi_gmem1-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+gt4d_1:m_axi_gmem2-DDR[1]          RD = 0.000 KB               WR = 1.125 KB        
+gt4d_1:m_axi_plmem0-DDR[1]          RD = 0.125 KB               WR = 0.000 KB        
+
+INFO: [HW-EM 06-0] Waiting for the simulator process to exit
+INFO: [HW-EM 06-1] All the simulator processes exited successfully
+Found Platform
+Platform Name: Xilinx
+INFO: Importing hw_emu_kernels.xclbin
+Loading: 'hw_emu_kernels.xclbin'
+tellg: 26819676
+Found Platform
+Platform Name: Xilinx
+INFO: Importing hw_emu_kernels.xclbin
+Loading: 'hw_emu_kernels.xclbin'
+tellg: 25921435
+INFO: [HW-EM 01] Hardware emulation runs simulation underneath. Using a large data set will result in long simulation times. It is recommended that a small dataset is used for faster execution. The flow uses approximate models for DDR memory and interconnect and hence the performance data generated is approximate.
+checksum numpy: 		 78720.430731
+vs computed fpga: 	 78720.430731
+INFO::[ Vitis-EM 22 ] [Time elapsed: 0 minute(s) 13 seconds, Emulation time: 0.0231474 ms]
+Data transfer between kernel(s) and global memory(s)
+abs4d_1:m_axi_gmem0-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+abs4d_1:m_axi_gmem2-DDR[1]          RD = 0.000 KB               WR = 1.125 KB        
+abs4d_1:m_axi_plmem0-DDR[1]          RD = 0.094 KB               WR = 0.000 KB        
+
+INFO: [HW-EM 06-0] Waiting for the simulator process to exit
+INFO: [HW-EM 06-1] All the simulator processes exited successfully
+Found Platform
+Platform Name: Xilinx
+INFO: Importing hw_emu_kernels.xclbin
+Loading: 'hw_emu_kernels.xclbin'
+tellg: 25930883
+Found Platform
+Platform Name: Xilinx
+INFO: Importing hw_emu_kernels.xclbin
+Loading: 'hw_emu_kernels.xclbin'
+tellg: 26802804
+INFO: [HW-EM 01] Hardware emulation runs simulation underneath. Using a large data set will result in long simulation times. It is recommended that a small dataset is used for faster execution. The flow uses approximate models for DDR memory and interconnect and hence the performance data generated is approximate.
+INFO: Kernel 'get4d' has been created
+checksum numpy: 		 88.
+vs computed fpga: 	 88.
+INFO::[ Vitis-EM 22 ] [Time elapsed: 0 minute(s) 15 seconds, Emulation time: 0.021636 ms]
+Data transfer between kernel(s) and global memory(s)
+get4d_1:m_axi_gmem0-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+get4d_1:m_axi_gmem1-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+get4d_1:m_axi_gmem2-DDR[1]          RD = 0.000 KB               WR = 1.125 KB        
+get4d_1:m_axi_plmem0-DDR[1]          RD = 0.125 KB               WR = 0.000 KB        
+
+INFO: [HW-EM 06-0] Waiting for the simulator process to exit
+INFO: [HW-EM 06-1] All the simulator processes exited successfully
+Found Platform
+Platform Name: Xilinx
+INFO: Importing hw_emu_kernels.xclbin
+Loading: 'hw_emu_kernels.xclbin'
+tellg: 27800277
+INFO: [HW-EM 01] Hardware emulation runs simulation underneath. Using a large data set will result in long simulation times. It is recommended that a small dataset is used for faster execution. The flow uses approximate models for DDR memory and interconnect and hence the performance data generated is approximate.
+INFO: Kernel 'mult4d' has been created
+checksum numpy: 		 3.578204e+07
+vs computed fpga: 	 3.578204e+07
+INFO::[ Vitis-EM 22 ] [Time elapsed: 0 minute(s) 15 seconds, Emulation time: 0.0180328 ms]
+Data transfer between kernel(s) and global memory(s)
+mult4d_1:m_axi_gmem0-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+mult4d_1:m_axi_gmem1-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+mult4d_1:m_axi_gmem2-DDR[1]          RD = 0.000 KB               WR = 1.125 KB        
+mult4d_1:m_axi_plmem0-DDR[1]          RD = 0.125 KB               WR = 0.000 KB        
+
+INFO: [HW-EM 06-0] Waiting for the simulator process to exit
+INFO: [HW-EM 06-1] All the simulator processes exited successfully
+Found Platform
+Platform Name: Xilinx
+INFO: Importing hw_emu_kernels.xclbin
+Loading: 'hw_emu_kernels.xclbin'
+tellg: 27239468
+INFO: [HW-EM 01] Hardware emulation runs simulation underneath. Using a large data set will result in long simulation times. It is recommended that a small dataset is used for faster execution. The flow uses approximate models for DDR memory and interconnect and hence the performance data generated is approximate.
+INFO: Kernel 'sub4d' has been created
+checksum numpy: 		 11959.964296
+vs computed fpga: 	 11959.964296
+INFO::[ Vitis-EM 22 ] [Time elapsed: 0 minute(s) 16 seconds, Emulation time: 0.017819 ms]
+Data transfer between kernel(s) and global memory(s)
+sub4d_1:m_axi_gmem0-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+sub4d_1:m_axi_gmem1-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+sub4d_1:m_axi_gmem2-DDR[1]          RD = 0.000 KB               WR = 1.125 KB        
+sub4d_1:m_axi_plmem0-DDR[1]          RD = 0.125 KB               WR = 0.000 KB        
+
+INFO: [HW-EM 06-0] Waiting for the simulator process to exit
+INFO: [HW-EM 06-1] All the simulator processes exited successfully
+Found Platform
+Platform Name: Xilinx
+INFO: Importing hw_emu_kernels.xclbin
+Loading: 'hw_emu_kernels.xclbin'
+tellg: 26800580
+INFO: [HW-EM 01] Hardware emulation runs simulation underneath. Using a large data set will result in long simulation times. It is recommended that a small dataset is used for faster execution. The flow uses approximate models for DDR memory and interconnect and hence the performance data generated is approximate.
+INFO: Kernel 'min4d' has been created
+checksum numpy: 		 48669.566094
+vs computed fpga: 	 48669.566094
+INFO::[ Vitis-EM 22 ] [Time elapsed: 0 minute(s) 15 seconds, Emulation time: 0.0213559 ms]
+Data transfer between kernel(s) and global memory(s)
+min4d_1:m_axi_gmem0-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+min4d_1:m_axi_gmem1-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+min4d_1:m_axi_gmem2-DDR[1]          RD = 0.000 KB               WR = 1.125 KB        
+min4d_1:m_axi_plmem0-DDR[1]          RD = 0.125 KB               WR = 0.000 KB        
+
+INFO: [HW-EM 06-0] Waiting for the simulator process to exit
+INFO: [HW-EM 06-1] All the simulator processes exited successfully
+Found Platform
+Platform Name: Xilinx
+INFO: Importing hw_emu_kernels.xclbin
+Loading: 'hw_emu_kernels.xclbin'
+tellg: 26803124
+INFO: [HW-EM 01] Hardware emulation runs simulation underneath. Using a large data set will result in long simulation times. It is recommended that a small dataset is used for faster execution. The flow uses approximate models for DDR memory and interconnect and hence the performance data generated is approximate.
+INFO: Kernel 'eet4d' has been created
+checksum numpy: 		 0.
+vs computed fpga: 	 0.
+INFO::[ Vitis-EM 22 ] [Time elapsed: 0 minute(s) 16 seconds, Emulation time: 0.019747 ms]
+Data transfer between kernel(s) and global memory(s)
+eet4d_1:m_axi_gmem0-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+eet4d_1:m_axi_gmem1-DDR[1]          RD = 1.125 KB               WR = 0.000 KB        
+eet4d_1:m_axi_gmem2-DDR[1]          RD = 0.000 KB               WR = 1.125 KB        
+eet4d_1:m_axi_plmem0-DDR[1]          RD = 0.125 KB               WR = 0.000 KB        
+
+INFO: [HW-EM 06-0] Waiting for the simulator process to exit
+INFO: [HW-EM 06-1] All the simulator processes exited successfully
+Running test for add....
+
+Running test for max....
+
+Running test for div....
+
+Running test for where....
+
+Running test for sqrt....
+
+Running test for gt....
+
+Running test for and....
+
+Running test for abs....
+
+Running test for not....
+
+Running test for get....
+
+Running test for mult....
+
+Running test for sub....
+
+Running test for min....
+
+Running test for eet....
+
