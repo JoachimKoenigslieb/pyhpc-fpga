@@ -86,7 +86,7 @@ int main(int argc, const char *argv[])
 	devices.resize(1);
 
 	<loadArgs>
-	xt::xarray<double> res = xt::load_npy<double>("./<func>_result_size" + size + ".npy");
+	xt::xarray<double> res = xt::load_npy<double>("./npfiles/<func>_result_size" + size + ".npy");
 	xt::xarray<double> res_compute = xt::zeros_like(res);
 
 	std::vector<double *> inputs, outputs;

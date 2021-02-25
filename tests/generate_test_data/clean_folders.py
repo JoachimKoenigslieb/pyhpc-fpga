@@ -29,7 +29,3 @@ for test_case in test_suites:
                 shutil.rmtree(path)
             else:
                 os.remove(path)
-
-        for f in glob.glob(f'{file}/kernels/*'):
-            print(f'tring to removek kernel {f}')
-            os.remove(f)
