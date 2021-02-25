@@ -8,6 +8,44 @@ from copy import copy
 import subprocess
 from scipy.linalg import lapack
 
+def generate_fixed_kernel_code(num_args, kernel_name, test_tag, size):
+    kernel_type = {1: 'run_1d_kernel',
+                   2: 'run_broadcast_kernel', 
+                   3: 'run_where_kernel'}[num_args]
+
+    XYZIO = ' '.join(['\t\t{X, Y, Z,},' for i in range(num_args + 1)])
+    ShapeIO = ' '.join(['\t\t{0, 0, 0,},' for i in range(num_args + 1)])
+    kernel_args = '\n'.join([XYZIO] + [ShapeIO] * 2)
+
+    with open(f'./templates/host_template_{test_tag}.cpp', 'r') as file:
+            template = file.read()
+
+    host_code = copy(template)
+    kernel_code = kernel_run_code(kernel_type, f'{kernel_name}4d', kernel_args)
+    
+    for string, s in zip(['X', 'Y', 'Z'], size):
+        host_code = host_code.replace(f'<{string}>', str(s))
+
+    host_code = host_code.replace('<func>', kernel_name)
+    host_code = host_code.replace('<convertFixed>', '\n\t'.join(
+        [f'data_in* arg{i}_fixed = aligned_alloc<data_in>(std::stoi(size));' for i in range(num_args)]
+    ))
+
+    host_code = host_code.replace('<loadArgs>', '\n\t'.join(
+        [f'xt::xarray<double> arg{i} = xt::load_npy<double>("{kernel_name}_arg{i}_size" + size + ".npy");' for i in range(num_args)]))
+    
+    host_code = host_code.replace(f'<convertFixedFill>', '\n\t\t'.join(
+        [f'arg{i}_fixed[i] = arg{i}[i];' for i in range(num_args)]
+    ))
+
+    host_code = host_code.replace('<args>', ', '.join(
+        [f'arg{i}_fixed' for i in range(num_args)]))
+    host_code = host_code.replace('<kernelRun>', kernel_code)
+
+    return host_code
+
+
+
 
 def generate_common_kernel_code(num_args, kernel_name, test_tag, size):
     kernel_type = {1: 'run_1d_kernel',
@@ -36,7 +74,6 @@ def generate_common_kernel_code(num_args, kernel_name, test_tag, size):
     host_code = host_code.replace('<kernelRun>', kernel_code)
 
     return host_code
-
 
 def kernel_run_code(kernel_type, kernel_name, argument_inputs):
     code = [f'{kernel_type}("{kernel_name}", inputs, outputs, ',
@@ -81,6 +118,11 @@ function_getter = {
                     'sub': np.subtract, 
                     'where': np.where,
                     }
+
+host_code_gen_getter = {
+                    'baseline': generate_common_kernel_code,
+                    'fixed_point': generate_fixed_kernel_code,
+}
 
 argnum = {
     'add': 2,
@@ -173,21 +215,21 @@ for test_case in test_suites:
                 np.save(f'../{test_case}/{file}/{file}_result_size{size_int}.npy', correct_out)
 
                 # copy current kernels and other static files needed for compilations
-                kernel_file = glob.glob(f'../../src/kernels/{file}*.cpp')[0]
+                kernel_path = glob.glob(f'../../src/kernels/{file}*.cpp')[0]
+                kernel_file_name = kernel_path.split('/')[-1]
+                existing_file_path = f'../{test_case}/{file}/kernels/{kernel_file_name}'
 
-                # Copy kernel from current source.
-                split_kernel = kernel_file.split('/')[-1].split('.')
-                kernel_target_name = ''.join([split_kernel[0], f'_{test_case}.', split_kernel[1]])
-
-                shutil.copy(kernel_file, f'../{test_case}/{file}/kernels/')
-                shutil.copy(f'./Makefile', f'../{test_case}/{file}/')
+                print(f'checking if file exists..: {existing_file_path}... it {"does" if os.path.isfile(existing_file_path) else "does not"}')
+                if not os.path.isfile(existing_file_path):
+                    shutil.copy(kernel_path, existing_file_path)
+                shutil.copy(f'./makefiles/Makefile_{test_case}', f'../{test_case}/{file}/Makefile')
                 shutil.copy(f'./design.cfg', f'../{test_case}/{file}/')
                 shutil.copy(f'./emconfig.json', f'../{test_case}/{file}/')
 
                 if file in special_host:
                     host_code = special_host[file]()
                 else:
-                    host_code = generate_common_kernel_code(num_args, kernel_name=file, test_tag=test_case, size=size)
+                    host_code = host_code_gen_getter[test_case](num_args, kernel_name=file, test_tag=test_case, size=size)
 
                 with open(f'../{test_case}/{file}/host_{test_case}.cpp', 'w') as open_file:
                         open_file.write(host_code)

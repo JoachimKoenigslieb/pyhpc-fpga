@@ -1,4 +1,9 @@
-extern "C" void add4d(double* A, double* B, double* out, int A_lin_offset, int B_lin_offset, int out_lin_offset, int* strides_offsets_out, int dim) {
+#include "ap_fixed.h"
+
+typedef ap_ufixed<19, 11> data_in;
+typedef ap_ufixed<20, 12> data_out;
+
+extern "C" void add4d(data_in* A, data_in* B, data_out* out, int A_lin_offset, int B_lin_offset, int out_lin_offset, int* strides_offsets_out, int dim) {
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem0 port = A latency = 64 num_read_outstanding = \
     16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
 #pragma HLS INTERFACE m_axi offset = slave bundle = gmem1 port = B latency = 64 num_read_outstanding = \
@@ -14,7 +19,7 @@ extern "C" void add4d(double* A, double* B, double* out, int A_lin_offset, int B
 #pragma HLS INTERFACE m_axi offset = slave bundle = control port = dim
 
 	int O_ind, A_ind, B_ind;
-	double A_val, B_val;
+	data_in A_val, B_val;
 
 	int A_offset[4];
 	int B_offset[4];
