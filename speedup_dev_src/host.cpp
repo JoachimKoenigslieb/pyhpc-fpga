@@ -3,7 +3,6 @@
 #include <sys/time.h>
 #include <algorithm>
 #include <math.h>
-#include <iostream>
 #include <xtensor/xarray.hpp>
 #include <xtensor/xnpy.hpp>
 #include <xtensor/xview.hpp>
@@ -13,7 +12,7 @@
 #include <xcl2/xcl2.cpp>
 #include <xsimd/xsimd.hpp>
 
-#include <runKernels.h>
+#include <runKernelsEdge.h>
 
 using namespace xt::placeholders; //enables xt::range(1, _) syntax. eqiv. to [1:] syntax in numpy 
 namespace xs = xsimd;
@@ -93,14 +92,16 @@ int main(int argc, const char *argv[])
 	xt::xarray<double, XTENSOR_DEFAULT_LAYOUT, xsimd::aligned_allocator<double, 4096>> arg1 = xt::load_npy<double>("add_arg1_size" + size + ".npy");
 	xt::xarray<double, XTENSOR_DEFAULT_LAYOUT, xsimd::aligned_allocator<double, 4096>> res_compute = xt::zeros_like(res);
 
+	// xt::xarray<double, XTENSOR_DEFAULT_LAYOUT, xsimd::aligned_allocator<double, 4096>> arg1 = xt::xarray<double>({1, 2, 3, 4}) ;	
+
 	std::vector<double *> inputs, outputs;
 
 	inputs = {arg0.data(), arg1.data()}; 
 	outputs = {res_compute.data()};
 	run_broadcast_kernel("add4d", inputs, outputs, 
-		{X, Y, Z,}, 		{X, Y, Z,}, 		{X, Y, Z,},
-		{0, 0, 0,}, 		{0, 0, 0,}, 		{0, 0, 0,},
-		{0, 0, 0,}, 		{0, 0, 0,}, 		{0, 0, 0,},
+		{X, Y, Z,}, 		{X, Y, Z}, 		{X, Y, Z,},
+		{0, 0, 0,}, 		{5, 0, Z-1}, 		{0, 0, 0,},
+		{0, 0, 0,}, 		{0, 0, 0}, 		{0, 0, 0,},
 devices, context, bins, q);
 
 	std::cout << "checksum numpy: \t\t" << xt::sum(res) << "\nvs computed fpga: \t" << xt::sum(res_compute) << std::endl;
