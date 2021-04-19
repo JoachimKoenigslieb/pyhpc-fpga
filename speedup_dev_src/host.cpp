@@ -8,11 +8,9 @@
 #include <xtensor/xview.hpp>
 #include <xtensor/xio.hpp>
 #include <xtensor/xadapt.hpp>
-
-#include <xcl2/xcl2.cpp>
 #include <xsimd/xsimd.hpp>
-
-#include <runKernelsEdge.h>
+#include <xcl2/xcl2.cpp>
+#include <runKernelsEdge.cpp>
 
 using namespace xt::placeholders; //enables xt::range(1, _) syntax. eqiv. to [1:] syntax in numpy 
 namespace xs = xsimd;
@@ -100,7 +98,7 @@ int main(int argc, const char *argv[])
 	outputs = {res_compute.data()};
 	run_broadcast_kernel("add4d", inputs, outputs, 
 		{X, Y, Z,}, 		{X, Y, Z}, 		{X, Y, Z,},
-		{0, 0, 0,}, 		{5, 0, Z-1}, 		{0, 0, 0,},
+		{0, 0, 0,}, 		{0, 0, 0}, 		{0, 0, 0,},
 		{0, 0, 0,}, 		{0, 0, 0}, 		{0, 0, 0,},
 devices, context, bins, q);
 

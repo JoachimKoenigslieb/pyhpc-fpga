@@ -32,7 +32,7 @@ def generate_fixed_kernel_code(num_args, kernel_name, test_tag, size):
     ))
 
     host_code = host_code.replace('<loadArgs>', '\n\t'.join(
-        [f'xt::xarray<double> arg{i} = xt::load_npy<double>(./npfiles/"{kernel_name}_arg{i}_size" + size + ".npy");' for i in range(num_args)]))
+        [f'xt::xarray<double> arg{i} = xt::load_npy<double>("./npfiles/{kernel_name}_arg{i}_size" + size + ".npy");' for i in range(num_args)]))
     
     host_code = host_code.replace(f'<convertFixedFill>', '\n\t\t'.join(
         [f'arg{i}_fixed[i] = arg{i}[i];' for i in range(num_args)]
@@ -43,9 +43,6 @@ def generate_fixed_kernel_code(num_args, kernel_name, test_tag, size):
     host_code = host_code.replace('<kernelRun>', kernel_code)
 
     return host_code
-
-
-
 
 def generate_common_kernel_code(num_args, kernel_name, test_tag, size):
     kernel_type = {1: 'run_1d_kernel',
@@ -68,7 +65,7 @@ def generate_common_kernel_code(num_args, kernel_name, test_tag, size):
 
     host_code = host_code.replace('<func>', kernel_name)
     host_code = host_code.replace('<loadArgs>', '\n\t'.join(
-        [f'xt::xarray<double> arg{i} = xt::load_npy<double>("{kernel_name}_arg{i}_size" + size + ".npy");' for i in range(num_args)]))
+        [f'xt::xarray<double> arg{i} = xt::load_npy<double>("./npfiles/{kernel_name}_arg{i}_size" + size + ".npy");' for i in range(num_args)]))
     host_code = host_code.replace('<args>', ', '.join(
         [f'arg{i}.data()' for i in range(num_args)]))
     host_code = host_code.replace('<kernelRun>', kernel_code)
@@ -182,8 +179,10 @@ BASE = '/'.join(os.getcwd().split('/')[:-1])
 COMPILE_HOST = False
 COMPILE_FPGA = False
 
-factors_of_two = 7
+factors_of_two = 15
 sizes = [[6, 6, 4]]
+
+only_add = True
 
 print(f'found {test_suites}')
 
@@ -202,56 +201,59 @@ for test_case in test_suites:
     func_names = [file.split('/')[-1] for file in files]
 
     for file in func_names:
-            os.chdir(f'{BASE}/generate_test_data')
-            num_args = argnum[file]
+        if only_add:
+            if file != 'add':
+                continue
 
-            print(f'doing {test_case}... {file} has {num_args} arguments.., creating correct output... ')
-            pre_func = preprocess[file]
+        os.chdir(f'{BASE}/generate_test_data')
+        num_args = argnum[file]
 
+        print(f'doing {test_case}... {file} has {num_args} arguments.., creating correct output... ')
+        pre_func = preprocess[file]
 
-            for size in sizes:
-                size_int = size[0] * size[1] * size[2]
-                input_data = [np.random.rand(*size)*1000 for _ in range(4)]
+        for size in sizes:
+            size_int = size[0] * size[1] * size[2]
+            input_data = [np.random.rand(*size)*1000 for _ in range(4)]
 
-                args = [pre_func(arg) for arg in input_data[0:num_args]]
-                func = function_getter[file]
-                correct_out = func(*args).astype('double')
+            args = [pre_func(arg) for arg in input_data[0:num_args]]
+            func = function_getter[file]
+            correct_out = func(*args).astype('double')
 
-                if not os.path.isdir(f'../{test_case}/{file}/npfiles/'): #check if we need to make an np files dir
-                        os.mkdir(f'../{test_case}/{file}/npfiles/')
+            if not os.path.isdir(f'../{test_case}/{file}/npfiles/'): #check if we need to make an np files dir
+                    os.mkdir(f'../{test_case}/{file}/npfiles/')
+    
+            for i, arg in enumerate(args):
+                np.save(f'../{test_case}/{file}/npfiles/{file}_arg{i}_size{size_int}.npy', arg.astype('double'))
+            np.save(f'../{test_case}/{file}/npfiles/{file}_result_size{size_int}.npy', correct_out)
+
+        # copy current kernels and other static files needed for compilations
+        kernel_path = glob.glob(f'../../src/kernels/{file}*.cpp')[0]
+        kernel_file_name = kernel_path.split('/')[-1]
+        existing_file_path = f'../{test_case}/{file}/kernels/{kernel_file_name}'
+
+        print(f'checking if file exists..: {existing_file_path}... it {"does" if os.path.isfile(existing_file_path) else "does not"}')  
+        if not os.path.isfile(existing_file_path):
+            if not os.path.isdir(f'../{test_case}/{file}/kernels'): #create kernels dir if not found...
+                os.mkdir(f'../{test_case}/{file}/kernels')
+            shutil.copy(kernel_path, existing_file_path)
+        shutil.copy(f'./makefiles/Makefile_{test_case}', f'../{test_case}/{file}/Makefile')
+        shutil.copy(f'./design.cfg', f'../{test_case}/{file}/')
+        shutil.copy(f'./emconfig.json', f'../{test_case}/{file}/')
+
+        if file in special_host:
+            host_code = special_host[file]()
+        else:
+            host_code = host_code_gen_getter[test_case](num_args, kernel_name=file, test_tag=test_case, size=size)
+
+        with open(f'../{test_case}/{file}/host_{test_case}.cpp', 'w') as open_file:
+                open_file.write(host_code)
+
+        if COMPILE_HOST: 
+                os.chdir(f'{BASE}/{test_case}/{file}')
+                subprocess.run(['make', 'host'], stdout=True)
+                print(f'host created for {file}')
         
-                for i, arg in enumerate(args):
-                    np.save(f'../{test_case}/{file}/npfiles/{file}_arg{i}_size{size_int}.npy', arg.astype('double'))
-                np.save(f'../{test_case}/{file}/npfiles/{file}_result_size{size_int}.npy', correct_out)
-
-            # copy current kernels and other static files needed for compilations
-            kernel_path = glob.glob(f'../../src/kernels/{file}*.cpp')[0]
-            kernel_file_name = kernel_path.split('/')[-1]
-            existing_file_path = f'../{test_case}/{file}/kernels/{kernel_file_name}'
-
-            print(f'checking if file exists..: {existing_file_path}... it {"does" if os.path.isfile(existing_file_path) else "does not"}')  
-            if not os.path.isfile(existing_file_path):
-                if not os.path.isdir(f'../{test_case}/{file}/kernels'): #create kernels dir if not found...
-                    os.mkdir(f'../{test_case}/{file}/kernels')
-                shutil.copy(kernel_path, existing_file_path)
-            shutil.copy(f'./makefiles/Makefile_{test_case}', f'../{test_case}/{file}/Makefile')
-            shutil.copy(f'./design.cfg', f'../{test_case}/{file}/')
-            shutil.copy(f'./emconfig.json', f'../{test_case}/{file}/')
-
-            if file in special_host:
-                host_code = special_host[file]()
-            else:
-                host_code = host_code_gen_getter[test_case](num_args, kernel_name=file, test_tag=test_case, size=size)
-
-            with open(f'../{test_case}/{file}/host_{test_case}.cpp', 'w') as open_file:
-                    open_file.write(host_code)
-
-            if COMPILE_HOST: 
-                    os.chdir(f'{BASE}/{test_case}/{file}')
-                    subprocess.run(['make', 'host'], stdout=True)
-                    print(f'host created for {file}')
-            
-            if COMPILE_FPGA:
-                    os.chdir(f'{BASE}/{test_case}/{file}')
-                    subprocess.run(['make'], stdout=True)
-                    print(f'bin created for {file}')
+        if COMPILE_FPGA:
+                os.chdir(f'{BASE}/{test_case}/{file}')
+                subprocess.run(['make'], stdout=True)
+                print(f'bin created for {file}')

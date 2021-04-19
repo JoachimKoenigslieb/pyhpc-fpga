@@ -543,18 +543,6 @@ int main(int argc, const char *argv[])
 	xt::xarray<double> forc = xt::load_npy<double>("../src/numpy_files/forc.npy");
 	xt::xarray<double> tke = xt::load_npy<double>("../src/numpy_files/tke.npy");
 	xt::xarray<double> dtke = xt::load_npy<double>("../src/numpy_files/dtke.npy");
-	xt::xarray<double> flux_east = xt::zeros<double>({X, Y, Z});
-	xt::xarray<double> flux_north = xt::zeros<double>({X, Y, Z});
-	xt::xarray<double> flux_top = xt::zeros<double>({X, Y, Z});
-	xt::xarray<double> sqrttke = xt::empty<double>({X, Y, Z});
-	xt::xarray<double> a_tri = xt::zeros<double>({X-4, Y-4, Z});
-	xt::xarray<double> b_tri = xt::zeros<double>({X-4, Y-4, Z});
-	xt::xarray<double> b_tri_edge = xt::zeros<double>({X-4, Y-4, Z});
-	xt::xarray<double> c_tri = xt::zeros<double>({X-4, Y-4, Z});
-	xt::xarray<double> d_tri = xt::zeros<double>({X-4, Y-4, Z});
-	xt::xarray<double> delta = xt::zeros<double>({X-4, Y-4, Z});
-	xt::xarray<double> ks = xt::zeros<double>({X-4, Y-4});
-	xt::xarray<double> tke_surf_corr = xt::zeros<double>({X,Y});
 
 
 	int tau = 0;
@@ -595,9 +583,9 @@ int main(int argc, const char *argv[])
 	inputs = {tke.data(), zero.data()};
 	outputs = {sqrttke.data()};
 	run_broadcast_kernel("max4d", inputs, outputs, 
-		{X, Y, Z, 3}, {1}, {X, Y, Z,},			//shapes
-		{0, 0, 0, 0}, {0}, {0, 0, 0,},			//start index
-		{0, 0, 0, -2}, {0}, {0, 0, 0}, 			//negativ end index
+		{X, Y, Z, 3}, {1}, {X, Y, Z,},				//shapes
+		{0, 0, 0, 0}, {0}, {0, 0, 0,},				//start index
+		{0, 0, 0, -2}, {0}, {0, 0, 0}, 				//negativ end index
 		devices, context, bins, q);
 
 	std::cout << "this is sqrttke after max: "  << sqrttke << std::endl;
@@ -605,9 +593,9 @@ int main(int argc, const char *argv[])
 	inputs = {sqrttke.data()}; //sqrt takes one argument. zero does nothing
 	outputs = {sqrttke.data()};
 	run_1d_kernel("sqrt4d", inputs, outputs, 
-		{X, Y, Z,}, {X, Y, Z,},			//shapes
-		{0, 0, 0,}, {0, 0, 0,},			//start index
-		{0, 0, 0,}, {0, 0, 0}, 			//negativ end index
+		{X, Y, Z,}, {X, Y, Z,},						//shapes
+		{0, 0, 0,}, {0, 0, 0,},						//start index
+		{0, 0, 0,}, {0, 0, 0}, 						//negativ end index
 		devices, context, bins, q);
 
 	std::cout << "this is sqrttke: " << sqrttke << std::endl;
@@ -660,6 +648,8 @@ int main(int argc, const char *argv[])
 		{0, 0, -1}, {-1}, {0, 0, -1}, 				//negativ end index
 		devices, context, bins, q);
 	
+	//a_tri last index
+
 	inputs = {zero.data(), delta.data(), };
 	outputs = {a_tri.data()};
 	run_broadcast_kernel("sub4d", inputs, outputs, 
@@ -693,6 +683,7 @@ int main(int argc, const char *argv[])
 		{0, 0, 1}, {0, 0, 0}, {0, 0, 1,},			//start index
 		{0, 0, -1}, {0, 0, -2}, {0, 0, -1},			//negativ end index
 		devices, context, bins, q);
+		
 	inputs = {b_tri_tmp.data(), dzw.data() };
 	outputs = {b_tri_tmp.data()};
 	run_broadcast_kernel("div4d", inputs, outputs, 
@@ -712,7 +703,7 @@ int main(int argc, const char *argv[])
 	inputs = {sqrttke.data(), mxl.data() };
 	outputs = {b_tri_tmp.data()}; //reuse tmp array as we have move intermediate result back to b_tri
 	run_broadcast_kernel("div4d", inputs, outputs, 
-		{X, Y, Z}, {X, Y, Z}, {X-4, Y-4, Z},	//shapes
+		{X, Y, Z}, {X, Y, Z}, {X-4, Y-4, Z},		//shapes
 		{2, 2, 1}, {2, 2, 1}, {0, 0, 1,},			//start index
 		{-2, -2, -1}, {-2, -2, -1}, {0, 0, -1},		//negativ end index
 		devices, context, bins, q);
