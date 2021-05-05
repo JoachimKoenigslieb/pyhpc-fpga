@@ -1,34 +1,11 @@
 #include "striding.cpp"
 #include "operations.cpp"
-#include <iostream>
 #include <algorithm>
 
-#define X 6
-#define Y 6
-#define Z 6
-#define SIZE 216
-
-void print_sum(double* arr, int N){
-	double s=0;
-	for (int i=0; i<N; i++){
-		s += arr[i]; 
-	}
-	std::cout << "sum: " << s << std::endl;
-}
-
-void print_arr(double* arr, int N){
-	for (int i=0; i<N; i++){
-		std::cout << arr[i] << ", ";
-	}
-	std::cout << "\n";
-}
-
-void print_arr(int* arr, int N){
-	for (int i=0; i<N; i++){
-		std::cout << arr[i] << ", ";
-	}
-	std::cout << "\n";
-}
+#define X 64
+#define Y 64
+#define Z 64
+#define SIZE 262144
 
 typedef int inputType[4]; 
 
@@ -1303,14 +1280,7 @@ extern "C" {
 			tke_strides, {3, 3, 4, 4}
 		);
 
-		std::cout << "tke before where: ";
-		print_sum(tke, X*Y*Z*3);
-
 		where4d(water_mask, d_tri, tke, tke, tke_strides);
-
-		std::cout << "tke after where before max: ";
-		print_sum(tke, X*Y*Z*3);
-
 
 		double mask[(X-4) * (Y-4)];
 		int mask_strides[38];
@@ -1378,9 +1348,6 @@ extern "C" {
 		);
 
 		max4d(zero, tke, tke, tke_maximum_strides);
-
-		std::cout << "tke after max ";
-		print_sum(tke, X*Y*Z*3);
 
 		// flux east
 		int strides_flux_east_1[38];
@@ -1619,9 +1586,6 @@ extern "C" {
 		);
 
 		add4d(tke_temp, tke, tke, strides_tke_10);
-
-		std::cout << "tke before unroll adv: ";
-		print_sum(tke, X * Y * Z * 3);
 
 		// unrolling ad superbee
 
@@ -1898,9 +1862,6 @@ extern "C" {
 		add4d(dtke, dtke_temp, dtke, strides_dtke_17);
 
 		// tke
-		std::cout << "tke before last: ";
-		print_sum(tke, X * Y * Z * 3);
-
 
 		double three_halves_plus_Ab_eps[1] = {1.5 + 0.1}; 
 		double one_halves_plus_Ab_eps[1] = {0.5 + 0.1}; 
@@ -1917,9 +1878,6 @@ extern "C" {
 		);
 
 		mult4d(three_halves_plus_Ab_eps, dtke, tke_temp2, strides_tke_temp2_1);
-
-		std::cout << "term 1 tke final";
-		print_sum(tke_temp2, X*Y*Z);
 
 		int strides_tke_temp2_2[38];
 
@@ -1943,9 +1901,6 @@ extern "C" {
 
 		mult4d(one_halves_plus_Ab_eps, dtke, tke_temp2, strides_tke_temp2_3);
 
-		std::cout << "term 2 tke final";
-		print_sum(tke_temp2, X*Y*Z);
-
 		int strides_tke_temp2_4[38];
 
 		calculate_strides(
@@ -1956,53 +1911,5 @@ extern "C" {
 		);
 
 		sub4d(tke, tke_temp2, tke, strides_tke_temp2_4);
-
-		std::cout << "sqrttke: ";
-		print_sum(sqrttke, Y * Y * Z);
-
-		std::cout << "a_tri: ";
-		print_sum(a_tri, (X-4) * (Y-4) * Z);
-
-		std::cout << "b_tri: ";
-		print_sum(b_tri, (X-4) * (Y-4) * Z);
-
-		std::cout << "b_tri_edge: ";
-		print_sum(b_tri_edge, (X-4) * (Y-4) * Z);
-
-		std::cout << "c_tri: ";
-		print_sum(c_tri, (X-4) * (Y-4) * Z);
-
-		std::cout << "d_tri: ";
-		print_sum(d_tri, (X-4) * (Y-4) * Z);
-
-		std::cout << "delta: ";
-		print_sum(delta, (X-4) * (Y-4) * Z);
-
-		std::cout << "land_mask: ";
-		print_sum(land_mask, (X-4) * (Y-4));
-
-		std::cout << "edge_mask: ";
-		print_sum(edge_mask, (X-4) * (Y-4) * Z);
-
-		std::cout << "water_mask: ";
-		print_sum(water_mask, (X-4) * (Y-4) * Z);
-
-		std::cout << "tke: ";
-		print_sum(tke, X * Y * Z * 3);
-
-		std::cout << "tke surf corr: ";
-		print_sum(tke_surf_corr, X*Y);
-
-		std::cout << "flux east: ";
-		print_sum(flux_east, X*Y*Z);
-
-		std::cout << "flux north: ";
-		print_sum(flux_north, X*Y*Z);
-
-		std::cout << "flux top: ";
-		print_sum(flux_top, X*Y*Z);
-
-		std::cout << "dtke: ";
-		print_sum(dtke, X*Y*Z*3);
 	}
 }
