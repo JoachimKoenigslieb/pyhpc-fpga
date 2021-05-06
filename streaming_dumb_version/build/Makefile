@@ -2,7 +2,7 @@ SRC_DIR := ../src
 KERNEL_DIR := ${SRC_DIR}/kernels
 OBJ_DIR := ./objects
 
-TARGET :=sw_emu
+TARGET := hw_emu
 PLATFORM := xilinx_u200_xdma_201830_2 
 
 KERNEL_INCLUDES := -I/tools/Xilinx/Vivado/2020.1/include/ -I${SRC_DIR}/includes/

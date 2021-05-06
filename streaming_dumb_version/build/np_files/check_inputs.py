@@ -78,8 +78,9 @@ def _adv_superbee(vel, var, mask, dx, axis, cost, cosu, dt_tracer):
         dx = dx[np.newaxis, np.newaxis, :-1]
     else:
         raise ValueError('axis must be 0, 1, or 2')
-        
+    
     uCFL = np.abs(velfac * vel[s] * dt_tracer / dx)
+    print(uCFL.shape)
     
     rjp = (var[sp2] - var[sp1]) * mask[sp1]
     rj = (var[sp1] - var[s]) * mask[s]

@@ -1,11 +1,12 @@
 #include "striding.cpp"
 #include "operations.cpp"
 #include <algorithm>
+#include <iostream>
 
-#define X 64
-#define Y 64
-#define Z 64
-#define SIZE 262144
+#define X 6
+#define Y 6
+#define Z 6
+#define SIZE 216
 
 typedef int inputType[4]; 
 
@@ -13,7 +14,7 @@ void adv_superbee(
 	double vel[X*Y*Z*3],
 	double var[X*Y*Z*3],
 	double mask[X*Y*Z],
-	double* dx, // we dont really know shape of this boi
+	double dx[X], // we dont really know shape of this boi
 	int axis,
 	double cost[X],
 	double cosu[X],
@@ -285,11 +286,11 @@ void adv_superbee(
 		mask_ = mask_pad_temp;
 	}
 
-	double uCFL[intermediate_shape[0] * intermediate_shape[1] * intermediate_shape[2]];
-	double rjp[intermediate_shape[0] * intermediate_shape[1] * intermediate_shape[2]];
-	double rj[intermediate_shape[0] * intermediate_shape[1] * intermediate_shape[2]];
-	double rjm[intermediate_shape[0] * intermediate_shape[1] * intermediate_shape[2]];
-	double cr[intermediate_shape[0] * intermediate_shape[1] * intermediate_shape[2]];
+	double uCFL[(X-3) * (Y-4) * Z];
+	double rjp[(X-3) * (Y-4) * Z];
+	double rj[(X-3) * (Y-4) * Z];
+	double rjm[(X-3) * (Y-4) * Z];
+	double cr[(X-3) * (Y-4) * Z];
 
 	inputType starts_0 = {starts[0 + 0], starts[1 + 0], starts[2 + 0], starts[3 + 0]};
 	inputType starts_1 = {starts[0 + 4], starts[1 + 4], starts[2 + 4], starts[3 + 4]};
@@ -441,7 +442,7 @@ void adv_superbee(
 	where4d(selection, rjm, rjp, cr, strides_where_selection);
 
 	double eps[1] = {1e-20};
-	double abs_rj[intermediate_shape[0] * intermediate_shape[1] * intermediate_shape[2]];
+	double abs_rj[(X-3) * (Y-4) * Z];
 
 	int strides_abs_rj[38];
 
@@ -487,7 +488,7 @@ void adv_superbee(
 
 	div4d(cr, selection, cr, strides_cr_1);
 
-	double cr_temp[intermediate_shape[0] * intermediate_shape[1] * intermediate_shape[2]];
+	double cr_temp[(X-3) * (Y-4) * Z];
 
 	int strides_cr_2[38];
 
@@ -667,7 +668,7 @@ void adv_superbee(
 
 
 extern "C" {
-	void work(double arrays_1d[8 * X], double arrays_2d[2 * X * Y], double arrays_3d[6 * SIZE], double arrays_4d[5 * SIZE * 3], double* out){
+	void work(double arrays_1d[8 * X], double arrays_2d[2 * X * Y], double arrays_3d[6 * SIZE], double arrays_4d[5 * SIZE * 3], double out[SIZE * 3]){
 		#pragma HLS INTERFACE m_axi offset = slave bundle = gmem0 port = arrays_1d latency = 64 num_read_outstanding = \
 			16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
 		#pragma HLS INTERFACE m_axi offset = slave bundle = gmem1 port = arrays_2d latency = 64 num_read_outstanding = \
@@ -1911,5 +1912,7 @@ extern "C" {
 		);
 
 		sub4d(tke, tke_temp2, tke, strides_tke_temp2_4);
+
+		memcpy(out, tke, SIZE*3 * sizeof(double));
 	}
 }

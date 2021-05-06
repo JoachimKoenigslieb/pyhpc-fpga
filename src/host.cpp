@@ -15,7 +15,7 @@
 
 #define X 6
 #define Y 6
-#define Z 4
+#define Z 6
 
 
 using namespace xt::placeholders; //enables xt::range(1, _) syntax. eqiv. to [1:] syntax in numpy 
@@ -977,8 +977,7 @@ int main(int argc, const char *argv[])
 		{0, 0, 0}, {0, 0, 0}, {0, 0, 0},						//negativ end index
 		devices, context, bins, q);
 
-
-	//prepare inputs for gtsv
+	//prepare inputs for gtsv 
 	inputs = {a_tri.data(), zero.data()}; //This is such a hack.. We need to write an assignment kernel also!
 	outputs = {a_tri.data()};
 	run_broadcast_kernel("mult4d", inputs, outputs, 
@@ -1098,6 +1097,7 @@ int main(int argc, const char *argv[])
 		{0, 0, 0}, {0,}, {0, 0, 0, },					//negativ end index
 		devices, context, bins, q);
 
+	// THIS IS WHERE WE ARE CURRENTLY!
 	//flux norht
 	inputs = {tke.data(), tke.data()};
 	outputs = {flux_north.data()};
@@ -1166,7 +1166,6 @@ int main(int argc, const char *argv[])
 		{-2, -2, 0}, {-2, 0, 0,}, {-2, -2, 0},					//negativ end index
 		devices, context, bins, q);		
 
-	
 	inputs = {tke_temp.data(), maskW.data()};
 	outputs = {tke_temp.data()};
 	run_broadcast_kernel("mult4d", inputs, outputs, 
@@ -1231,7 +1230,8 @@ int main(int argc, const char *argv[])
 		{-2, -2, 0}, {-2, 2, 0, -1}, {-2, -2, 0, -1},					//negativ end index
 		devices, context, bins, q);	
 
-	// adv flux superbee wgrid unroll
+	// adv flux superbee wgrid unroll acutally IM DOWN TO HEre NOW
+	
 	xt::xarray<double> maskUtr = xt::zeros_like(maskW);
 
 	inputs = {maskW.data(), maskW.data()}; 

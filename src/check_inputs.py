@@ -228,7 +228,6 @@ dtke[:, :, 1:-1, tau] += - (flux_top[:, :, 1:-1] - flux_top[:, :, :-2]) / dzw[1:
 dtke[:, :, -1, tau] += - (flux_top[:, :, -1] - flux_top[:, :, -2]) / (0.5 * dzw[-1])
 
 tke[:, :, :, taup1] +=  (1.5 + AB_eps) * dtke[:, :, :, tau] - (0.5 + AB_eps) * dtke[:, :, :, taum1]
-# tke[:, :, :, taup1] += dt_tracer * ((1.5 + AB_eps) * dtke[:, :, :, tau] - (0.5 + AB_eps) * dtke[:, :, :, taum1])
 
 
 print(f'sqrttke checksum: {sqrttke.sum()}')

@@ -15,6 +15,7 @@ void compute(double local_A[TILE_SIZE], double local_B[TILE_SIZE], double local_
 	
 	for (int l=0; l<8; l++){
 		#pragma HLS pipeline II=1
+		// possible that pragma UNROLL is better here!
 		A_ind = l*A_stride;
 		B_ind = l*B_stride;
 
@@ -124,9 +125,11 @@ void add4d(uint512_dt* A, uint512_dt* B, uint512_dt* out, int* strides_offsets_o
 
 	uint512_dt A_elm, B_elm;
 
+	
 	for (int i=out_offset[0]; i<(out_shape[0] + out_end_offset[0]); i++){
 		for (int j=out_offset[1]; j<(out_shape[1] + out_end_offset[1]); j++){
 			for (int k=out_offset[2]; k<(out_shape[2] + out_end_offset[2]); k++){
+				// probalby should pipeline or unroll or dataflow somewhere here?? 
 				// we tile innermost loop
 				for (int l_tile=0; l_tile<l_tiles; l_tile++){
 					read(A, B, local_A, local_B, i, j, k, l_tile, A_scaled_stride, B_scaled_stride, A_offset, B_offset, A_stride[3], B_stride[3], A_lin_offset, B_lin_offset); 

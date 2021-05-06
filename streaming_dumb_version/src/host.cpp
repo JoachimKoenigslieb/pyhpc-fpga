@@ -141,7 +141,7 @@ int main(int argc, const char *argv[])
 	double* arrays_2d = aligned_alloc<double>(2 * X * Y);
 	double* arrays_3d = aligned_alloc<double>(6 * SIZE);
 	double* arrays_4d = aligned_alloc<double>(5 * SIZE * 3);
-	double* output = aligned_alloc<double>(144);
+	double* output = aligned_alloc<double>(SIZE * 3);
 
 	memcpy(arrays_1d, dxt.data(), sizeof(double) * X);
 	memcpy(arrays_1d + X, dxu.data(), sizeof(double) * X);
@@ -170,7 +170,9 @@ int main(int argc, const char *argv[])
 
 	inputs = { arrays_1d, arrays_2d, arrays_3d, arrays_4d, };  
 	outputs = {output};
+	std::cout << "enqueue kernel...\n";
 	run_broadcast_kernel("work", inputs, outputs, {X, Y, Z}, devices, context, bins, q, program);
-
+	std::cout << "recieved data on host\n";
+	print_sum(output, 6*6*6*3);
 	return 0;
 }
