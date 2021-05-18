@@ -3,8 +3,6 @@
 #include <string>
 #include <assert.h>
 #include <xcl2/xcl2.hpp>
-#include "CL/cl_ext_xilinx.h"
-#include "CL/cl.hpp"
 
 void run_broadcast_kernel(std::string kernel_name,
 							std::vector<double *> &inputs,

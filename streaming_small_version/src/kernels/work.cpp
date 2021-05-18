@@ -25,7 +25,7 @@ extern "C" {
 		#pragma HLS INTERFACE m_axi offset = slave bundle = gmem2 port = out latency = 64 num_read_outstanding = \
 			16 num_write_outstanding = 16 max_read_burst_length = 64 max_write_burst_length = 64 depth = 16
 
-		
+		#pragma HLS DATAFLOW		
 
 		int tau[1] = {0};
 		double taup1[1] = {1.};
